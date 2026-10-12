@@ -42,3 +42,107 @@ class StateLog:
             if state.version > after and (not out or out[-1] != state.status.value):
                 out.append(state.status.value)
         return out
+
+
+class FakePlayer:
+    """Implements the Player protocol in memory: records calls, publishes plausible state."""
+
+    def __init__(self) -> None:
+        from playlist_player.playback.queue import EMPTY_QUEUE
+
+        self.bus = StateBus()
+        self.calls: list[tuple] = []
+        self.queue = EMPTY_QUEUE
+        self.index: int | None = None
+        self.paused = True
+        self.position = 0.0
+        self.volume = 100.0
+        self.fail_with: Exception | None = None
+        self._publish()
+
+    def _publish(self) -> None:
+        from playlist_player.models import LyricsKind, PlayerStatus
+
+        entry = self.queue.entry_at(self.index)
+        if entry is None:
+            status = PlayerStatus.IDLE
+        else:
+            status = PlayerStatus.PAUSED if self.paused else PlayerStatus.PLAYING
+        self.bus.publish(
+            PlaybackState(
+                status=status,
+                paused=self.paused or entry is None,
+                playlist_id=self.queue.playlist_id,
+                track_id=entry.track_id if entry else None,
+                queue_index=self.index if entry else None,
+                queue_length=len(self.queue),
+                position_s=self.position,
+                duration_s=5.0 if entry else None,
+                volume=self.volume,
+                captured_at_epoch_ms=int(time.time() * 1000),
+                lyrics_kind=entry.lyrics_kind if entry else LyricsKind.MISSING,
+                offset_ms=entry.offset_ms if entry else 0,
+            )
+        )
+
+    def _record(self, *call) -> None:
+        if self.fail_with is not None:
+            raise self.fail_with
+        self.calls.append(call)
+
+    def load_queue(self, queue, *, paused: bool = False) -> None:
+        self._record("load_queue", [e.track_id for e in queue.entries], queue.start_index)
+        self.queue, self.index, self.paused, self.position = queue, queue.start_index, paused, 0.0
+        self._publish()
+
+    def play(self) -> None:
+        self._record("play")
+        self.paused = False
+        if self.index is None and len(self.queue):
+            self.index = 0
+        self._publish()
+
+    def pause(self) -> None:
+        self._record("pause")
+        self.paused = True
+        self._publish()
+
+    def toggle(self) -> None:
+        self._record("toggle")
+        self.paused = not self.paused
+        self._publish()
+
+    def next(self) -> None:
+        self._record("next")
+        if self.index is not None and self.index + 1 < len(self.queue):
+            self.index += 1
+        self._publish()
+
+    def prev(self) -> None:
+        self._record("prev")
+        if self.index:
+            self.index -= 1
+        self._publish()
+
+    def seek(self, *, position_s=None, delta_s=None) -> None:
+        self._record("seek", position_s, delta_s)
+        self.position = position_s if position_s is not None else self.position + delta_s
+        self._publish()
+
+    def set_volume(self, volume: float) -> None:
+        self._record("set_volume", volume)
+        self.volume = volume
+        self._publish()
+
+    def set_offset(self, track_id: str, offset_ms: int) -> None:
+        self._record("set_offset", track_id, offset_ms)
+        if self.queue.set_offset(track_id, offset_ms):
+            self._publish()
+
+    def stop(self) -> None:
+        self._record("stop")
+        self.index = None
+        self._publish()
+
+    def close(self) -> None:
+        self._record("close")

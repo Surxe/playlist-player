@@ -212,6 +212,18 @@ def test_reducer_distinguishes_ended_from_stopped(reducer):
     assert reducer.snapshot(None, 0).status is PlayerStatus.IDLE
 
 
+def test_reducer_does_not_republish_when_mpv_forgets_properties_after_the_end(reducer):
+    start_playing(reducer, 2)
+    reducer.apply({"event": "end-file", "reason": "eof"})
+    reducer.apply(prop("idle-active", True))
+    reducer.snapshot(None, 0)
+    # Going idle, mpv reports these as unavailable; the ended state looks the same.
+    assert not reducer.apply(prop("duration", None))
+    assert not reducer.apply(prop("path", None))
+    assert not reducer.apply(prop("playlist-pos", -1))
+    assert not reducer.apply(prop("core-idle", True))
+
+
 def test_reducer_reports_a_file_error_until_the_next_file_starts(reducer):
     start_playing(reducer, 0)
     assert reducer.apply({"event": "end-file", "reason": "error", "file_error": "unrecognized"})

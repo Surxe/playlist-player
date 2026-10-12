@@ -181,6 +181,19 @@ def _cmd_pin(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
+    from .server.app import run
+
+    return run(settings)
+
+
+def _cmd_ctl(args: argparse.Namespace, settings: Settings) -> int:
+    from .server.ctl import send
+
+    send(settings.base_url, args.verb, args.value)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     # Settings flags are shared by every command, so they hang off a parent parser.
     common = argparse.ArgumentParser(add_help=False)
@@ -226,9 +239,9 @@ def build_parser() -> argparse.ArgumentParser:
     pin.add_argument("track", help="track ID")
     pin.add_argument("url", help="URL of the audio to use, or `clear` to remove the pin")
 
-    add("serve", "Run the daemon: mpv, the HTTP API and the remote-control page.", _pending(7))
+    add("serve", "Run the daemon: mpv, the HTTP API and the remote-control page.", _cmd_serve)
 
-    ctl = add("ctl", "Send a transport command to a running daemon.", _pending(7))
+    ctl = add("ctl", "Send a transport command to a running daemon.", _cmd_ctl)
     ctl.add_argument(
         "verb", choices=("toggle", "play", "pause", "next", "prev", "stop", "seek", "volume")
     )

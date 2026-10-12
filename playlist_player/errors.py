@@ -24,6 +24,10 @@ class CacheError(PlaylistPlayerError):
     """A cached file is missing or cannot be parsed."""
 
 
+class NotInCacheError(CacheError):
+    """The playlist, track or asset asked for has not been synced. The API answers 404."""
+
+
 class HttpError(PlaylistPlayerError):
     """A request failed after retries. Carries the status and a short body excerpt."""
 

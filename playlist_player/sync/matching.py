@@ -163,7 +163,9 @@ def score_audio(
     title = _fold(candidate.title)
     channel = _fold(candidate.channel)
     track_title = _fold(track.title)
-    if _has_phrase(title, normalize_title(track.title)):
+    # Either form of the track's title will do: with its decoration stripped ("Song" for
+    # "Song (feat. X)"), or whole, for a title whose brackets are part of its name.
+    if _has_phrase(title, normalize_title(track.title)) or _has_phrase(title, track_title):
         score += _TITLE_POINTS
     else:
         score += _TITLE_ABSENT

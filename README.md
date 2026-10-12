@@ -7,10 +7,9 @@ Nothing here uses an LLM at runtime. The tracklist comes from one Apify REST cal
 playlist, lyrics from LRCLIB, audio through yt-dlp, and everything is cached on disk so
 it is fetched once.
 
-> Status: under construction. The dev-side commands work: `sync` caches a playlist's
-> tracklist, audio, time-synced lyrics and cover art, `status` reports coverage, and
-> `pin` chooses a track's audio by hand. `serve`, `ctl` and `overlay` are registered but
-> not built yet. This README grows with each stage.
+> Status: under construction. Syncing (`sync`, `status`, `pin`) and the daemon (`serve`,
+> the remote page, `ctl`) work. The lyric `overlay` and the installer for running the
+> daemon from a reviewed copy are not built yet. This README grows with each stage.
 
 ## How it fits together
 
@@ -96,10 +95,31 @@ that track again:
 .venv/bin/python -m playlist_player sync <id> --track <track-id>
 ```
 
+## Playing
+
+```bash
+.venv/bin/python -m playlist_player serve          # the daemon; then open http://127.0.0.1:8765/
+.venv/bin/python -m playlist_player ctl toggle     # also: play, pause, next, prev, stop
+.venv/bin/python -m playlist_player ctl seek +10   # relative with a sign, absolute without
+.venv/bin/python -m playlist_player ctl volume 70
+```
+
+`serve` starts mpv and owns it. The page is a remote control, not a player: sound comes
+from mpv. Pick a playlist, click a track, and the lyric pane follows the song; the
+offset buttons shift a track's lyrics earlier or later and the value is remembered in
+`state/`. Space toggles, left and right seek five seconds, up and down change track.
+
+`ctl` exists so a desktop shortcut can pause from inside a fullscreen application. With
+`PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN` set, the keyboard's media keys work too.
+
+The daemon listens on loopback only, refuses requests that do not name its own address
+or that come from another web origin, takes playlist and track IDs but never file
+paths, and has no endpoint that downloads anything.
+
 ## Development
 
 ```bash
-.venv/bin/python -m pytest                 # unit + integration; loopback only, no real network
+.venv/bin/python -m pytest                 # loopback only; spawns mpv (silent), ffmpeg and node
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 .venv/bin/python build.py                  # regenerate .env.example and the section below
 ```

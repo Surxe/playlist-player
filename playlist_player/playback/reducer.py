@@ -129,47 +129,42 @@ class MpvStateReducer:
             return PlayerStatus.LOADING
         return PlayerStatus.PLAYING
 
-    def signature(self) -> tuple[Any, ...]:
-        """Everything discrete about the state; a change here is worth a snapshot."""
-        entry = self.current_entry()
-        duration = self._props.get("duration")
-        return (
-            self.status(),
-            self.paused,
-            self.queue.playlist_id,
-            self.current_index(),
-            entry.track_id if entry else None,
-            entry.lyrics_kind if entry else None,
-            entry.offset_ms if entry else None,
-            len(self.queue),
-            round(duration, 2) if isinstance(duration, int | float) else None,
-            self._props.get("speed"),
-            self._props.get("volume"),
-            self._fatal or self._error,
-        )
-
-    def snapshot(self, position_s: float | None, captured_at_epoch_ms: int) -> PlaybackState:
-        """The state as of ``captured_at_epoch_ms``, when playback was at ``position_s``."""
-        self._published = self.signature()
-        entry = self.current_entry()
+    def _discrete(self) -> dict[str, Any]:
+        """Every snapshot field except the position and its timestamp."""
+        index = self.current_index()
+        entry = self.queue.entry_at(index)
         duration = self._props.get("duration")
         speed = self._props.get("speed")
         volume = self._props.get("volume")
-        has_track = entry is not None
-        return PlaybackState(
-            status=self.status(),
+        known_duration = entry is not None and isinstance(duration, int | float)
+        return {
+            "status": self.status(),
             # With nothing loaded there is nothing to resume, so report it as paused.
-            paused=self.paused or self.idle,
-            playlist_id=self.queue.playlist_id,
-            track_id=entry.track_id if entry else None,
-            queue_index=self.current_index(),
-            queue_length=len(self.queue),
+            "paused": self.paused or self.idle,
+            "playlist_id": self.queue.playlist_id,
+            "track_id": entry.track_id if entry else None,
+            "queue_index": index if entry else None,
+            "queue_length": len(self.queue),
+            # mpv refines a file's duration slightly as it reads; that is not news.
+            "duration_s": round(float(duration), 2) if known_duration else None,
+            "speed": float(speed) if isinstance(speed, int | float) else 1.0,
+            "volume": float(volume) if isinstance(volume, int | float) else 100.0,
+            "lyrics_kind": entry.lyrics_kind if entry else LyricsKind.MISSING,
+            "offset_ms": entry.offset_ms if entry else 0,
+            "error": self._fatal or self._error,
+        }
+
+    def signature(self) -> tuple[Any, ...]:
+        """What a client would see change; a difference here is worth a snapshot."""
+        return tuple(self._discrete().values())
+
+    def snapshot(self, position_s: float | None, captured_at_epoch_ms: int) -> PlaybackState:
+        """The state as of ``captured_at_epoch_ms``, when playback was at ``position_s``."""
+        fields = self._discrete()
+        self._published = tuple(fields.values())
+        has_track = fields["track_id"] is not None
+        return PlaybackState(
             position_s=max(0.0, float(position_s)) if has_track and position_s is not None else 0.0,
-            duration_s=float(duration) if has_track and isinstance(duration, int | float) else None,
-            speed=float(speed) if isinstance(speed, int | float) else 1.0,
-            volume=float(volume) if isinstance(volume, int | float) else 100.0,
             captured_at_epoch_ms=captured_at_epoch_ms,
-            lyrics_kind=entry.lyrics_kind if entry else LyricsKind.MISSING,
-            offset_ms=entry.offset_ms if entry else 0,
-            error=self._fatal or self._error,
+            **fields,
         )

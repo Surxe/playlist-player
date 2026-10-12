@@ -130,6 +130,16 @@ def test_title_matching_ignores_decoration_on_either_side():
     assert score(decorated).score == 85
 
 
+def test_a_title_with_brackets_in_the_middle_still_matches():
+    # Stripping the bracket leaves "odd remix", which is not a phrase of the upload's title.
+    track = Track(
+        id="T3", title="Odd (B$$) Remix", artists=("Made Up Artist 0",), duration_ms=200_000
+    )
+    upload = candidate("x", 200, title="Odd (B$$) (Remix)", channel="Made Up Artist 0 - Topic")
+    result = score(upload, track)
+    assert result.score == 110 and "title differs" not in result.reasons
+
+
 def test_the_review_threshold():
     # Right length, right title, unknown uploader: just acceptable.
     assert score(candidate("a", 200, title="Invented Song 0", channel="x")).score == 70

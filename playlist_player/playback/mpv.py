@@ -61,6 +61,8 @@ class MpvPlayer:
     ) -> None:
         self.bus = bus
         self._socket_path = Path(socket_path)
+        # The queue is handed to mpv as a playlist file beside the socket.
+        self._playlist_file = self._socket_path.with_suffix(".m3u")
         self._mpv_bin = mpv_bin
         self._audio_output = audio_output
         self._mpris_plugin = mpris_plugin
@@ -149,8 +151,9 @@ class MpvPlayer:
                     ipc.command("quit", timeout=1.0)
                 ipc.close()
             self._kill_process(grace_s=2.0)
-            with contextlib.suppress(FileNotFoundError):
-                self._socket_path.unlink()
+            for leftover in (self._socket_path, self._playlist_file):
+                with contextlib.suppress(FileNotFoundError):
+                    leftover.unlink()
         self._inbox.put(_CLOSED)
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=3)
@@ -179,17 +182,22 @@ class MpvPlayer:
 
     def load_queue(self, queue: PlayQueue, *, paused: bool = False) -> None:
         with self._lock:
-            self._command("stop")
-            self._command("playlist-clear")
             self._reducer.set_queue(queue)
             if not len(queue):
+                self._command("stop")
                 self._inbox.put(_REFRESH)
                 return
-            self._command("set_property", "pause", True)
-            for entry in queue.entries:
-                self._command("loadfile", entry.path, "append")
-            self._command("set_property", "playlist-pos", queue.start_index)
+            # One atomic command. Building the playlist entry by entry (stop, clear,
+            # append, set position) races with mpv's own play loop: a "stop" is only
+            # acted on later and can swallow the start that follows it, leaving mpv idle
+            # with a full playlist. "loadlist ... replace" swaps the playlist and starts
+            # the entry named by playlist-start in a single step.
+            self._playlist_file.write_text(
+                "".join(f"{entry.path}\n" for entry in queue.entries), encoding="utf-8"
+            )
             self._command("set_property", "pause", paused)
+            self._command("set_property", "playlist-start", queue.start_index)
+            self._command("loadlist", str(self._playlist_file), "replace")
 
     def play(self) -> None:
         with self._lock:
