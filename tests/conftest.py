@@ -21,3 +21,13 @@ def _isolated_settings(monkeypatch, tmp_path):
         if name.startswith("PLAYLIST_PLAYER_") or name == "APIFY_TOKEN":
             monkeypatch.delenv(name)
     monkeypatch.chdir(tmp_path)  # OptionsConfig loads .env from the working directory
+
+
+@pytest.fixture
+def fake_server():
+    """A loopback HTTP server standing in for a third-party API; see tests/support."""
+    from tests.support.fake_http import FakeServer
+
+    server = FakeServer()
+    yield server
+    server.close()

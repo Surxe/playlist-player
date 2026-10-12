@@ -28,6 +28,8 @@ Handler = Callable[[argparse.Namespace, Settings], int]
 
 # Exit status for a command that exists but is not built yet.
 _NOT_BUILT = 3
+# Exit status when a command did its work but the tracklist it worked from is incomplete.
+_INCOMPLETE = 2
 
 
 def _pending(stage: int) -> Handler:
@@ -36,6 +38,56 @@ def _pending(stage: int) -> Handler:
         return _NOT_BUILT
 
     return handler
+
+
+def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
+    from .cache import CacheStore
+    from .http import HttpClient
+    from .sources.tracklist import build_tracklist_source, playlist_id_from
+    from .sync import report
+    from .sync.tracklist import load_tracklist, tracklist_is_cached
+
+    store = CacheStore(settings.cache_dir, settings.state_dir)
+    http = HttpClient()
+    playlist_id = playlist_id_from(args.playlist)
+
+    def source_for(name: str):
+        return build_tracklist_source(
+            name,
+            http=http,
+            apify_base_url=settings.apify_base_url,
+            apify_token=settings.require_apify_token,
+            apify_max_charge_usd=settings.apify_max_charge_usd,
+        )
+
+    will_fetch = args.refresh_tracklist or not tracklist_is_cached(store, playlist_id)
+    if will_fetch and args.dry_run:
+        print(f"Playlist {playlist_id}: would fetch the tracklist (a paid Actor run).")
+        print("  Nothing further can be planned until the tracklist is cached.")
+        return 0
+    if will_fetch:
+        print(
+            f"Fetching the tracklist for {playlist_id}: a paid Actor run "
+            f"({settings.tracklist_actor}, capped at ${settings.apify_max_charge_usd:g}) ...",
+            flush=True,
+        )
+
+    result = load_tracklist(
+        store,
+        playlist_id,
+        source_for,
+        settings.tracklist_actor,
+        refresh=args.refresh_tracklist,
+        write=not args.dry_run,
+    )
+    print("\n".join(report.tracklist_summary(result)))
+    warning = report.shortfall_warning(result)
+    if warning:
+        print(f"playlist_player: {warning}", file=sys.stderr)
+
+    if args.only != "tracklist":
+        print("  audio, lyrics and cover art: not built yet (stages 3 to 5)")
+    return _INCOMPLETE if warning else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,10 +109,14 @@ def build_parser() -> argparse.ArgumentParser:
         sub.set_defaults(handler=handler)
         return sub
 
-    sync = add("sync", "Fetch tracklist, audio, lyrics and cover art into the cache.", _pending(5))
+    sync = add("sync", "Fetch tracklist, audio, lyrics and cover art into the cache.", _cmd_sync)
     sync.add_argument("playlist", help="playlist URL, spotify:playlist:ID URI, or bare ID")
     sync.add_argument("--limit", type=int, metavar="N", help="process only the first N tracks")
-    sync.add_argument("--only", choices=("audio", "lyrics", "cover"), help="run a single stage")
+    sync.add_argument(
+        "--only",
+        choices=("tracklist", "audio", "lyrics", "cover"),
+        help="run a single stage (the tracklist is always loaded first)",
+    )
     sync.add_argument("--track", metavar="ID", help="process a single track")
     sync.add_argument("--retry-misses", action="store_true", help="retry stages recorded as misses")
     sync.add_argument(

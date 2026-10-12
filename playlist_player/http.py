@@ -67,18 +67,23 @@ class HttpClient:
         headers: Mapping[str, str] | None = None,
         body: bytes | None = None,
         timeout: float | None = None,
+        retries: int | None = None,
     ) -> bytes:
         """Send one request, retrying transient failures, and return the response body.
 
+        ``retries`` overrides the client's attempt budget for this request; pass 1 for a
+        request that must never be repeated (one that costs money each time it is sent).
+
         Raises :class:`NotFoundError` on 404 and :class:`HttpError` on any other failure.
         """
+        attempts = self._retries if retries is None else max(1, retries)
         if params:
             clean = {k: v for k, v in params.items() if v is not None}
             url = f"{url}{'&' if '?' in url else '?'}{urllib.parse.urlencode(clean)}"
         all_headers = {"User-Agent": USER_AGENT, "Accept": "application/json", **(headers or {})}
         shown = _strip_query(url)
 
-        for attempt in range(1, self._retries + 1):
+        for attempt in range(1, attempts + 1):
             request = urllib.request.Request(url, data=body, method=method, headers=all_headers)
             self.request_count += 1
             try:
@@ -86,7 +91,7 @@ class HttpClient:
             except urllib.error.HTTPError as exc:
                 status, payload = exc.code, exc.read() or b""
             except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
-                if attempt < self._retries:
+                if attempt < attempts:
                     self._sleep(self._backoff_s * attempt)
                     continue
                 raise HttpError(None, shown, str(getattr(exc, "reason", exc))) from exc
@@ -95,7 +100,7 @@ class HttpClient:
                 return payload
             if status == 404:
                 raise NotFoundError(status, shown)
-            if status in _RETRY_STATUSES and attempt < self._retries:
+            if status in _RETRY_STATUSES and attempt < attempts:
                 self._sleep(self._backoff_s * attempt)
                 continue
             excerpt = payload[:_BODY_EXCERPT].decode("utf-8", "replace").strip()

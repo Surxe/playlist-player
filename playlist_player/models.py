@@ -88,6 +88,13 @@ class Playlist:
     # Entries the source returned that were dropped (unplayable, or not a music track).
     skipped: int = 0
 
+    @property
+    def shortfall(self) -> int:
+        """Entries the source says exist but did not return; 0 when complete or unknown."""
+        if self.reported_total is None:
+            return 0
+        return max(0, self.reported_total - len(self.track_ids) - self.skipped)
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["track_ids"] = list(self.track_ids)

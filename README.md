@@ -7,9 +7,9 @@ Nothing here uses an LLM at runtime. The tracklist comes from one Apify REST cal
 playlist, lyrics from LRCLIB, audio through yt-dlp, and everything is cached on disk so
 it is fetched once.
 
-> Status: under construction. The foundations and the tracklist fetch exist; `sync`,
-> `serve`, `ctl` and `overlay` are registered but not built yet. This README grows with
-> each stage.
+> Status: under construction. `sync` loads and normalizes a playlist's tracklist; the
+> audio, lyrics and cover stages, and `serve`, `ctl` and `overlay`, are registered but not
+> built yet. This README grows with each stage.
 
 ## How it fits together
 
@@ -48,19 +48,24 @@ scripts/prereq-check.sh
 
 Only the tracklist fetch needs a secret, an Apify API token. It lives in
 `~/.config/playlist-player/secrets.env` (mode 600) in Ethan's home, never in this repo;
-see `secrets.env.example`. Fetch a playlist's tracklist once with:
+see `secrets.env.example`. `sync` reads it from the `APIFY_TOKEN` environment variable,
+and only when a playlist's tracklist is not cached yet. Fetch a tracklist once with the
+wrapper that loads the secrets file and then runs `sync <playlist> --only tracklist`:
 
 ```bash
 scripts/fetch-tracklist.sh 'https://open.spotify.com/playlist/<id>'
 ```
 
-Each fetch is a paid Actor run of about $0.01. An existing tracklist is not re-fetched
-unless `--refresh` is passed.
+Each fetch is a paid Actor run of about $0.01, sent once and never retried
+automatically. The response is kept verbatim under `cache/playlists/<id>/` and every
+later `sync` works from that copy with no token and no request. It is fetched again only
+on an explicit `--refresh` (`sync --refresh-tracklist`). An exit status of 2 means the
+source returned fewer tracks than the playlist holds.
 
 ## Development
 
 ```bash
-.venv/bin/python -m pytest                 # unit tests; no network, no processes
+.venv/bin/python -m pytest                 # unit + integration; loopback only, no real network
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 .venv/bin/python build.py                  # regenerate .env.example and the section below
 ```
