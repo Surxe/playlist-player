@@ -1,0 +1,7 @@
+# Runtime dependencies for the dev-side commands (sync, status, pin).
+# Settings (env vars, CLI args, generated docs) are managed by OptionsConfig.
+optionsconfig>=0.4.0
+# Audio source. Installed here only; the Debian package is deliberately not used
+# because YouTube changes break old releases. First remedy for download failures:
+#   .venv/bin/pip install -U yt-dlp
+yt-dlp
