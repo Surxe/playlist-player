@@ -28,7 +28,7 @@ class Received:
         return json.loads(self.body)
 
 
-# A handler returns (status, body); a dict or list body is sent as JSON.
+# A handler returns (status, body); a dict or list body is sent as JSON, bytes as they are.
 Reply = tuple[int, Any]
 Handler = Callable[[Received], Reply]
 

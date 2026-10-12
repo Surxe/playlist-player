@@ -9,6 +9,7 @@ sync simply fetches it again. There is no database to fall out of step.
 from __future__ import annotations
 
 import contextlib
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..errors import CacheError
@@ -120,3 +121,40 @@ def read_track_state(store: CacheStore, track_id: str) -> TrackState:
 
 def write_track_state(store: CacheStore, track_id: str, state: TrackState) -> None:
     store.write_json(store.track_state(track_id), state.to_dict())
+
+
+# --------------------------------- overview -------------------------------- #
+
+
+@dataclass(frozen=True, slots=True)
+class TrackStatus:
+    """Everything cached for one track, read in one go for ``status`` and the API."""
+
+    track: Track
+    audio: AudioAsset | None
+    lyrics: LyricsInfo | None
+    has_cover: bool
+    state: TrackState
+
+    @property
+    def lyrics_kind(self) -> LyricsKind:
+        return self.lyrics.kind if self.lyrics else LyricsKind.MISSING
+
+    @property
+    def playable(self) -> bool:
+        return self.audio is not None
+
+
+def track_status(store: CacheStore, track_id: str) -> TrackStatus:
+    return TrackStatus(
+        track=read_track(store, track_id),
+        audio=read_audio(store, track_id),
+        lyrics=read_lyrics_info(store, track_id),
+        has_cover=store.has(store.track_cover(track_id)),
+        state=read_track_state(store, track_id),
+    )
+
+
+def playlist_status(store: CacheStore, playlist: Playlist) -> list[TrackStatus]:
+    """Status of each distinct track of ``playlist``, in playlist order."""
+    return [track_status(store, track_id) for track_id in dict.fromkeys(playlist.track_ids)]

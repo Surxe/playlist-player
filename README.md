@@ -7,10 +7,10 @@ Nothing here uses an LLM at runtime. The tracklist comes from one Apify REST cal
 playlist, lyrics from LRCLIB, audio through yt-dlp, and everything is cached on disk so
 it is fetched once.
 
-> Status: under construction. `sync` loads a playlist's tracklist, downloads matched
-> audio through yt-dlp and fetches time-synced lyrics from LRCLIB; `pin` chooses a
-> track's audio by hand. Cover art, `status`, `serve`, `ctl` and `overlay` are registered
-> but not built yet. This README grows with each stage.
+> Status: under construction. The dev-side commands work: `sync` caches a playlist's
+> tracklist, audio, time-synced lyrics and cover art, `status` reports coverage, and
+> `pin` chooses a track's audio by hand. `serve`, `ctl` and `overlay` are registered but
+> not built yet. This README grows with each stage.
 
 ## How it fits together
 
@@ -62,6 +62,39 @@ automatically. The response is kept verbatim under `cache/playlists/<id>/` and e
 later `sync` works from that copy with no token and no request. It is fetched again only
 on an explicit `--refresh` (`sync --refresh-tracklist`). An exit status of 2 means the
 source returned fewer tracks than the playlist holds.
+
+## Syncing a playlist
+
+```bash
+.venv/bin/python -m playlist_player sync <playlist-url>     # everything, resumable
+.venv/bin/python -m playlist_player sync <id> --limit 10    # the first ten tracks
+.venv/bin/python -m playlist_player sync <id> --only lyrics # one stage: audio, lyrics or cover
+.venv/bin/python -m playlist_player sync <id> --dry-run     # what would be fetched
+.venv/bin/python -m playlist_player status <id>             # per-track table and totals
+```
+
+Per track, in this order: audio (yt-dlp), then lyrics (LRCLIB), then cover art. The
+order matters: the lyrics record is chosen by the measured length of the audio that was
+actually downloaded, which is what keeps the overlay in time.
+
+`sync` can be interrupted at any point and run again; what is on disk is what is done.
+What a source does not have is remembered in `cache/misses.json` and not asked for
+again for `MISS_RETRY_DAYS` (or until `--retry-misses`). A stage that fails outright
+(network trouble, yt-dlp broken by a YouTube change) is not remembered and is simply
+retried by the next `sync`. When downloads start failing, update yt-dlp first:
+
+```bash
+.venv/bin/pip install -U yt-dlp
+```
+
+A track whose audio search finds nothing trustworthy is flagged `review` in `status`,
+with its best candidates listed in `cache/misses.json`. Choose one by hand, then sync
+that track again:
+
+```bash
+.venv/bin/python -m playlist_player pin <track-id> <url>    # or: pin <track-id> clear
+.venv/bin/python -m playlist_player sync <id> --track <track-id>
+```
 
 ## Development
 

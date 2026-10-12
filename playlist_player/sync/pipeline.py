@@ -14,10 +14,10 @@ in this order:
 One stage failing never stops the later stages for that track, or any other track.
 
 Tracks are spread over a small thread pool; the stages of one track run in sequence on
-one thread. On Ctrl-C no new work starts, stages already running are allowed to finish
-(each writes through a temp file, so nothing partial ever has a final name), and the
-interrupt is then re-raised. Because "done" is read from disk, running again resumes
-exactly where it stopped.
+one thread. On Ctrl-C (or a bug surfacing from a stage) no new work starts, stages
+already running are allowed to finish (each writes through a temp file, so nothing
+partial ever has a final name), and the interrupt is then re-raised. Because "done" is
+read from disk, running again resumes exactly where it stopped.
 """
 
 from __future__ import annotations
@@ -76,7 +76,9 @@ class Pipeline:
                 reports[futures[future]] = report
                 if self._on_track:
                     self._on_track(report)
-        except KeyboardInterrupt:
+        except BaseException:
+            # Ctrl-C, or a bug surfacing from a stage: start nothing new, let what is
+            # running finish, then let the caller see it.
             self._stop.set()
             executor.shutdown(wait=True, cancel_futures=True)
             raise
@@ -88,10 +90,16 @@ class Pipeline:
         if self._stop.is_set():
             return None
         results: dict[str, StageResult] = {}
-        for stage in self._stages:
-            if self._stop.is_set():
-                break
-            results[stage.name] = self._run_stage(stage, track)
+        try:
+            for stage in self._stages:
+                if self._stop.is_set():
+                    break
+                results[stage.name] = self._run_stage(stage, track)
+        except BaseException:
+            # Expected failures were already turned into results; anything arriving
+            # here is fatal, so stop the other workers picking up new tracks.
+            self._stop.set()
+            raise
         return TrackReport(track, results)
 
     def _run_stage(self, stage: Stage, track: Track) -> StageResult:

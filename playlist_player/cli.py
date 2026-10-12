@@ -48,6 +48,7 @@ def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
     from .sources.tracklist import build_tracklist_source, playlist_id_from
     from .sync import report
     from .sync.audio import AudioStage
+    from .sync.cover import CoverStage, fetch_playlist_cover
     from .sync.lyrics import LyricsStage
     from .sync.pipeline import Pipeline
     from .sync.tracklist import load_tracklist, tracklist_is_cached
@@ -106,11 +107,11 @@ def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
             LrclibSource(http, base_url=settings.lrclib_base_url),
             tolerance_s=settings.lyrics_duration_tolerance_s,
         ),
+        "cover": lambda: CoverStage(store, http),
     }
     wanted = [args.only] if args.only else list(stages)
-    unbuilt = [name for name in wanted if name not in stages]
-    if unbuilt:
-        raise PlaylistPlayerError(f"sync stage not built yet: {', '.join(unbuilt)}")
+    if "cover" in wanted and not args.dry_run:
+        fetch_playlist_cover(store, http, result.tracklist.playlist)
 
     tracks = list(result.tracklist.tracks)
     if args.track:
@@ -140,6 +141,31 @@ def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
     reports = pipeline.run(tracks)
     print("\n".join(report.sync_totals(reports, wanted)))
     return status
+
+
+def _cmd_status(args: argparse.Namespace, settings: Settings) -> int:
+    from .cache import CacheStore, MissLog, assets
+    from .sources.tracklist import playlist_id_from
+    from .sync import report
+
+    store = CacheStore(settings.cache_dir, settings.state_dir)
+    if args.playlist is None:
+        playlist_ids = store.playlist_ids()
+        if not playlist_ids:
+            print("No playlists are cached yet. Run: sync <playlist-url>")
+            return 0
+        for playlist_id in playlist_ids:
+            playlist = assets.read_playlist(store, playlist_id)
+            print(report.coverage_line(playlist, assets.playlist_status(store, playlist)))
+        return 0
+
+    playlist_id = playlist_id_from(args.playlist)
+    if not store.has(store.playlist_json(playlist_id)):
+        raise PlaylistPlayerError(f"playlist {playlist_id} is not cached; run sync on it first")
+    playlist = assets.read_playlist(store, playlist_id)
+    statuses = assets.playlist_status(store, playlist)
+    print("\n".join(report.status_table(playlist, statuses, MissLog(store).all())))
+    return 0
 
 
 def _cmd_pin(args: argparse.Namespace, settings: Settings) -> int:
@@ -191,8 +217,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="report what would be done; write nothing"
     )
 
-    status = add("status", "Show what is cached for a playlist.", _pending(5))
-    status.add_argument("playlist", nargs="?", help="playlist ID; omit to list cached playlists")
+    status = add("status", "Show what is cached for a playlist.", _cmd_status)
+    status.add_argument(
+        "playlist", nargs="?", help="playlist URL, URI or ID; omit to list cached playlists"
+    )
 
     pin = add("pin", "Choose the audio for a track by hand.", _cmd_pin)
     pin.add_argument("track", help="track ID")
