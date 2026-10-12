@@ -1,7 +1,10 @@
-# Runtime dependencies for the dev-side commands (sync, status, pin).
-# Settings (env vars, CLI args, generated docs) are managed by OptionsConfig.
-optionsconfig>=0.4.0
-# Audio source. Installed here only; the Debian package is deliberately not used
-# because YouTube changes break old releases. First remedy for download failures:
+# Runtime dependencies.
+#
+# Only `sync` needs anything beyond the Python standard library: yt-dlp, for audio.
+# `serve` and `ctl` run on the standard library alone (plus the mpv executable), and
+# `overlay` adds the system GTK 4 bindings, which pip cannot provide.
+#
+# yt-dlp is installed here rather than from a distribution package because YouTube
+# changes break old releases. First remedy for download failures:
 #   .venv/bin/pip install -U yt-dlp
 yt-dlp

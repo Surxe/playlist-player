@@ -3,72 +3,74 @@
 Cache a Spotify playlist's audio and time-synced lyrics, play it through mpv, and show
 the current lyric line in an overlay above a fullscreen application.
 
-Nothing here uses an LLM at runtime. The tracklist comes from one Apify REST call per
+Nothing here uses an LLM at runtime. The track list comes from one Apify REST call per
 playlist, lyrics from LRCLIB, audio through yt-dlp, and everything is cached on disk so
 it is fetched once.
 
-> Status: under construction. Syncing (`sync`, `status`, `pin`), the daemon (`serve`,
-> the remote page, `ctl`) and the lyric `overlay` work from this repo. The installer for
-> running the daemon and overlay from a reviewed copy is not built yet, and the overlay
-> has only been verified in a headless compositor, not above a real fullscreen game.
+Linux only. The overlay additionally needs a Wayland compositor that supports the
+layer-shell protocol (KDE Plasma, Sway and other wlroots compositors; not GNOME).
 
 ## How it fits together
 
-| Command | What it does | Runs as |
-|---------|--------------|---------|
-| `sync` | Fetches tracklist, audio, lyrics and cover art into `cache/` | dev, from this repo |
-| `status` | Shows what is cached for a playlist | either |
-| `pin` | Chooses the audio for a track by hand | dev |
-| `serve` | The daemon: owns mpv, publishes playback state, serves the remote-control page | ethan, from an installed copy |
-| `ctl` | Sends play/pause/next to the daemon, for a global shortcut | ethan |
-| `overlay` | Draws the current lyric line above other windows; hidden while paused | ethan |
+| Command | What it does | Needs |
+|---------|--------------|-------|
+| `sync` | Fetches track list, audio, lyrics and cover art into the cache | network, yt-dlp, ffmpeg |
+| `status` | Shows what is cached for a playlist | |
+| `pin` | Chooses the audio for a track by hand | |
+| `serve` | The daemon: owns mpv, publishes playback state, serves the remote-control page | mpv |
+| `ctl` | Sends play, pause, next and so on to the daemon, for a keyboard shortcut | a running `serve` |
+| `overlay` | Draws the current lyric line above other windows; hidden while paused | a running `serve`, GTK 4 layer-shell |
 
-The page and the overlay are both plain clients of the daemon's HTTP API on 127.0.0.1.
-Neither reads the cache and neither talks to mpv.
+`sync` is the only command that touches the network. `serve`, the page and the overlay
+work from the cache: the page and the overlay are plain clients of the daemon's HTTP API
+on 127.0.0.1, and neither reads the cache nor talks to mpv.
 
 ## Setup
 
-System packages (Debian 13):
+Programs (Debian and Ubuntu names; other distributions have the same packages):
 
 ```bash
-sudo apt-get install mpv mpv-mpris libgtk4-layer-shell0 gir1.2-gtk4layershell-1.0 yt-dlp-
+sudo apt-get install python3-venv ffmpeg mpv                       # required
+sudo apt-get install mpv-mpris                                     # optional: media keys
+sudo apt-get install libgtk4-layer-shell0 gir1.2-gtk4layershell-1.0 python3-gi  # optional: overlay
 ```
 
-The trailing `yt-dlp-` keeps Debian's yt-dlp out. yt-dlp is installed in the virtualenv
-instead, because it has to be updated whenever YouTube changes.
-
-Virtualenv (`--system-site-packages` is required: the GTK bindings are a system package):
+Then, in a clone of this repo:
 
 ```bash
 python3 -m venv --system-site-packages .venv
-.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pip install -r requirements.txt
 scripts/prereq-check.sh
 ```
 
+`--system-site-packages` lets the virtualenv see the system's GTK bindings, which pip
+cannot install; leave it off if you do not want the overlay. yt-dlp is installed in the
+virtualenv, not from a distribution package, because it has to be updated whenever
+YouTube changes. Having `deno` or `node` on the PATH makes its extraction more reliable.
+
+Run commands as `.venv/bin/python -m playlist_player <command>` from the repo. Only
+`sync` needs the virtualenv at all: `serve`, `ctl` and `overlay` use nothing but the
+standard library (and, for the overlay, the system GTK bindings), so they also run with
+the system `python3`.
+
 ## The one secret
 
-Only the tracklist fetch needs a secret, an Apify API token. It lives in
-`~/.config/playlist-player/secrets.env` (mode 600) in Ethan's home, never in this repo;
-see `secrets.env.example`. `sync` reads it from the `APIFY_TOKEN` environment variable,
-and only when a playlist's tracklist is not cached yet. Fetch a tracklist once with the
-wrapper that loads the secrets file and then runs `sync <playlist> --only tracklist`:
+Fetching a playlist's track list is a paid Apify Actor run of about $0.01 and needs an
+Apify API token in the `APIFY_TOKEN` environment variable (or in a gitignored `.env`).
+See `secrets.env.example` for the two ways to supply it. The token is read only by
+`sync`, and only when a playlist's track list is not cached yet.
 
-```bash
-scripts/fetch-tracklist.sh 'https://open.spotify.com/playlist/<id>'
-```
-
-Each fetch is a paid Actor run of about $0.01, sent once and never retried
-automatically. The response is kept verbatim under `cache/playlists/<id>/` and every
-later `sync` works from that copy with no token and no request. It is fetched again only
-on an explicit `--refresh` (`sync --refresh-tracklist`). An exit status of 2 means the
-source returned fewer tracks than the playlist holds.
+The request is sent once and never retried automatically. The response is kept verbatim
+under `cache/playlists/<id>/`, and every later `sync` works from that copy with no token
+and no request; it is fetched again only with `sync --refresh-tracklist`. An exit status
+of 2 means the source returned fewer tracks than the playlist holds.
 
 ## Syncing a playlist
 
 ```bash
 .venv/bin/python -m playlist_player sync <playlist-url>     # everything, resumable
 .venv/bin/python -m playlist_player sync <id> --limit 10    # the first ten tracks
-.venv/bin/python -m playlist_player sync <id> --only lyrics # one stage: audio, lyrics or cover
+.venv/bin/python -m playlist_player sync <id> --only lyrics # one stage: tracklist, audio, lyrics or cover
 .venv/bin/python -m playlist_player sync <id> --dry-run     # what would be fetched
 .venv/bin/python -m playlist_player status <id>             # per-track table and totals
 ```
@@ -96,6 +98,9 @@ that track again:
 .venv/bin/python -m playlist_player sync <id> --track <track-id>
 ```
 
+Audio is downloaded for personal, local playback and never redistributed. Whether that
+is acceptable under the terms of the services involved is for you to judge.
+
 ## Playing
 
 ```bash
@@ -111,11 +116,13 @@ offset buttons shift a track's lyrics earlier or later and the value is remember
 `state/`. Space toggles, left and right seek five seconds, up and down change track.
 
 `ctl` exists so a desktop shortcut can pause from inside a fullscreen application. With
-`PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN` set, the keyboard's media keys work too.
+`PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN` set to the plugin's path (Debian:
+`/usr/lib/mpv-mpris/mpris.so`), the keyboard's media keys work too.
 
 The daemon listens on loopback only, refuses requests that do not name its own address
 or that come from another web origin, takes playlist and track IDs but never file
-paths, and has no endpoint that downloads anything.
+paths, and has no endpoint that downloads anything. mpv is started with no config file,
+no scripts and no network access.
 
 ## The overlay
 
@@ -135,13 +142,31 @@ Position it with `--demo`: set `PLAYLIST_PLAYER_OVERLAY_ANCHOR` (an edge, a corn
 again. Font, size, colours, a second (next) line, how early a line appears and the fade
 are in the Configuration section below.
 
-It needs a Wayland compositor with the layer-shell protocol (KDE Plasma, Sway and other
-wlroots compositors; not GNOME) and the two `gtk4-layer-shell` packages from Setup. If a
-game ignores it, run the game in borderless-window mode rather than exclusive fullscreen.
+If a game ignores it, run the game in borderless-window mode rather than exclusive
+fullscreen.
+
+## Where things are kept
+
+| Path | Holds |
+|------|-------|
+| `cache/` | Everything fetched: track lists, audio, lyrics, covers. Safe to delete; `sync` rebuilds it. |
+| `state/` | Per-track corrections you made: lyric offsets and audio pins. Not rebuilt. |
+
+Both are gitignored and sit in the repo by default; `PLAYLIST_PLAYER_CACHE_DIR` and
+`PLAYLIST_PLAYER_STATE_DIR` move them. Files get ordinary permissions, whatever your
+umask allows.
+
+This repo ships no installer and does nothing about user accounts. To run the daemon
+and overlay from somewhere other than a working clone (as a different account than the
+one that syncs, say), copy the `playlist_player/` directory there, run it with the
+system `python3 -m playlist_player`, and point the two directory settings at the shared
+cache. Sharing a cache between accounts is ordinary Unix: a group-owned, setgid
+directory and a umask of 002 for whoever writes to it.
 
 ## Development
 
 ```bash
+.venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest                 # loopback only; spawns mpv (silent), ffmpeg and node
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 .venv/bin/python build.py                  # regenerate .env.example and the section below
@@ -149,21 +174,22 @@ scripts/verify.sh                          # the three checks above; --head test
 scripts/headless-kwin.sh run <command>     # run something in a display-less KWin, e.g. the overlay
 ```
 
-The overlay tests start that headless compositor themselves and are skipped where KWin
-or the layer-shell bindings are missing. `overlay --demo --snapshot out.png` renders one
-frame to a PNG (over a half dark, half light backdrop) for a look without a session.
+Tests never reach a real service: every third-party API is replaced by a loopback
+server, and a guard fails any test that connects elsewhere. The overlay tests start a
+headless KWin themselves and are skipped where KWin or the layer-shell bindings are
+missing. `overlay --demo --snapshot out.png` renders one frame to a PNG (over a half
+dark, half light backdrop) for a look without a graphical session.
 
-Everything under `cache/` is third-party content (audio, lyrics, tracklists) and is
-gitignored. Tests use synthetic data only; never commit a real lyric, audio file or
-Actor response.
+Everything under `cache/` is third-party content (audio, lyrics, track lists). Tests use
+synthetic data only; never commit a real lyric, audio file or Actor response.
 
 ## Configuration
 
 Every setting can be given as a CLI flag, an environment variable, or a line in a `.env`
 file in the working directory, in that order of precedence. `APIFY_TOKEN` is the
-exception: supply it through the environment only. The generated list below shows a flag
-for it because the generator documents one for every option; that flag is deliberately
-not registered, so a token cannot end up on a command line.
+exception: supply it through the environment or `.env` only. The generated list below
+shows a flag for it because the generator documents one for every option; that flag is
+deliberately not registered, so a token cannot end up on a command line.
 
 <!-- BEGIN_GENERATED_OPTIONS -->
 #### Storage

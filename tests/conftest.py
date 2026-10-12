@@ -22,7 +22,7 @@ def _isolated_settings(monkeypatch, tmp_path):
     for name in list(os.environ):
         if name.startswith("PLAYLIST_PLAYER_") or name == "APIFY_TOKEN":
             monkeypatch.delenv(name)
-    monkeypatch.chdir(tmp_path)  # OptionsConfig loads .env from the working directory
+    monkeypatch.chdir(tmp_path)  # a .env in the working directory is read as settings
 
 
 @pytest.fixture(autouse=True)

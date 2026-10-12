@@ -1,4 +1,4 @@
-"""Cache store: path safety, atomic writes, and modes that survive a strict umask."""
+"""Cache store: path safety, atomic writes, and ordinary permissions."""
 
 from __future__ import annotations
 
@@ -33,17 +33,32 @@ def test_paths_are_built_from_the_two_roots(store):
         store.track_dir("../escape")
 
 
-def test_modes_are_forced_even_under_a_strict_umask(store):
-    """ethan and dev both write here; a 077 umask must not lock the other account out."""
-    old = os.umask(0o077)
+@pytest.mark.parametrize(
+    ("umask", "file_mode", "dir_mode"),
+    [(0o002, 0o664, 0o775), (0o022, 0o644, 0o755), (0o077, 0o600, 0o700)],
+)
+def test_permissions_follow_the_umask_like_any_ordinary_file(store, umask, file_mode, dir_mode):
+    """Nothing is forced: a private umask gives private files, a shared one shared files."""
+    old = os.umask(umask)
     try:
         path = store.track_json("T1")
         store.write_json(path, {"id": "T1"})
+        store.write_json(path, {"id": "T1", "again": True})  # a replacement, same rule
     finally:
         os.umask(old)
-    assert stat.S_IMODE(path.stat().st_mode) == 0o664
+    assert stat.S_IMODE(path.stat().st_mode) == file_mode
     for directory in (path.parent, path.parent.parent, store.cache_dir):
-        assert stat.S_IMODE(directory.stat().st_mode) == 0o2775, directory
+        assert stat.S_IMODE(directory.stat().st_mode) & 0o777 == dir_mode, directory
+
+
+def test_a_setgid_cache_directory_passes_its_group_down(store):
+    """How a cache is shared between accounts: set up outside this code, and respected."""
+    store.cache_dir.mkdir(parents=True)
+    store.cache_dir.chmod(0o2775)
+    path = store.track_json("T1")
+    store.write_json(path, {"id": "T1"})
+    assert path.parent.stat().st_mode & stat.S_ISGID
+    assert path.stat().st_gid == store.cache_dir.stat().st_gid
 
 
 def test_write_replaces_atomically_and_leaves_no_temp_files(store):

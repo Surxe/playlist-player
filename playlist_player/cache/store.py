@@ -22,9 +22,9 @@ Layout::
 No other module builds one of these paths by hand; they all come from
 :class:`CacheStore`, so the layout can change in one place.
 
-Two accounts write here (``dev`` runs sync, ``ethan`` runs the daemon and the tracklist
-fetch), so every file is forced to 0664 and every directory to 2775 regardless of the
-caller's umask. Relying on umask would leave files the other account cannot update.
+Files and directories get ordinary permissions: whatever the process umask allows.
+Sharing a cache between accounts is therefore a matter of how it is run (a group-owned
+setgid directory and a umask of 002), not something this code imposes.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ import contextlib
 import json
 import os
 import re
+import secrets
 import shutil
 import tempfile
 from collections.abc import Iterator
@@ -40,9 +41,6 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import CacheError, InvalidIdError
-
-FILE_MODE = 0o664
-DIR_MODE = 0o2775
 
 # Spotify IDs are 22 base-62 characters. Accept a range so tests can use short ones, but
 # never anything that could be a path component with meaning ("..", "a/b").
@@ -62,18 +60,8 @@ def validate_id(value: str) -> str:
 
 
 def ensure_dir(path: Path) -> Path:
-    """Create ``path`` and any missing parents, each group-writable and setgid."""
-    missing = []
-    current = path
-    while not current.exists():
-        missing.append(current)
-        current = current.parent
-    for directory in reversed(missing):
-        with contextlib.suppress(FileExistsError):  # another worker got there first
-            directory.mkdir()
-        # Only directories we may own; an existing parent created by someone else is theirs.
-        with contextlib.suppress(PermissionError):
-            directory.chmod(DIR_MODE)
+    """Create ``path`` and any missing parents."""
+    path.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -82,13 +70,15 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
 
     The temp file lives in the destination directory so ``os.replace`` is a rename on one
     filesystem. An interrupted write leaves the previous file, or nothing, never a stub.
+    It is created with mode 0666 less the umask, as any ordinary file would be
+    (``tempfile`` would force 0600 and hide the file from a group sharing the cache).
     """
     ensure_dir(path.parent)
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp_name = path.parent / f".{path.name}.{secrets.token_hex(6)}.tmp"
+    fd = os.open(tmp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
-        os.chmod(tmp_name, FILE_MODE)  # mkstemp creates 0600 whatever the umask is
         os.replace(tmp_name, path)
     except BaseException:
         with contextlib.suppress(FileNotFoundError):
@@ -210,7 +200,6 @@ class CacheStore:
         """Move a finished file on the same filesystem into the cache under its final name."""
         self._require_inside(dest)
         ensure_dir(dest.parent)
-        os.chmod(source, FILE_MODE)
         os.replace(source, dest)
 
     def remove(self, path: Path) -> bool:

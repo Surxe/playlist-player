@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 import pytest
@@ -72,7 +73,9 @@ def test_downloads_the_best_candidate_and_stores_a_tagged_copy(store, tones):
     assert tags(path)["title"] == "Invented Song 0"
     assert tags(path)["artist"] == "Made Up Artist 0, A Guest"
     assert tags(path)["album"] == "Imaginary Album 0"
-    assert oct(path.stat().st_mode & 0o777) == "0o664"
+    umask = os.umask(0)
+    os.umask(umask)
+    assert path.stat().st_mode & 0o777 == 0o666 & ~umask  # ordinary permissions
     assert sorted(p.name for p in store.track_dir(TRACK.id).iterdir()) == [
         "audio.json",
         "audio.opus",
