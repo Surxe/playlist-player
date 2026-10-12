@@ -53,7 +53,8 @@ _EDGES = {
 
 class GtkLayerRenderer:
     def __init__(self, placement: Placement, style: Style, *, monitor: str = "") -> None:
-        if not Gtk.init_check():
+        # init_check can report success with no display opened, so ask for the display too.
+        if not Gtk.init_check() or Gdk.Display.get_default() is None:
             raise PlaylistPlayerError(
                 "no display: the overlay needs a Wayland session (is WAYLAND_DISPLAY set?)"
             )

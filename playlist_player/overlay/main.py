@@ -58,6 +58,13 @@ def demo_view(settings: Settings) -> OverlayView:
     return OverlayView(visible=True, text=DEMO_TEXT, next_text=following)
 
 
+def connect(settings: Settings, renderer: Renderer) -> tuple[OverlayModel, DaemonClient]:
+    """The model and the client that feeds it, set to wake ``renderer`` on every change."""
+    model = OverlayModel(lead_ms=settings.overlay_lead_ms, show_next=settings.overlay_lines == 2)
+    client = DaemonClient(settings.base_url, model, on_change=renderer.wake)
+    return model, client
+
+
 def run(settings: Settings, *, demo: bool = False, snapshot: str | None = None) -> int:
     renderer = build_renderer(settings)
     if snapshot:
@@ -69,8 +76,7 @@ def run(settings: Settings, *, demo: bool = False, snapshot: str | None = None) 
         renderer.run(lambda: view)
         return 0
 
-    model = OverlayModel(lead_ms=settings.overlay_lead_ms, show_next=settings.overlay_lines == 2)
-    client = DaemonClient(settings.base_url, model, on_change=renderer.wake)
+    model, client = connect(settings, renderer)
     client.start()
     try:
         renderer.run(lambda: model.view(now_epoch_ms()))

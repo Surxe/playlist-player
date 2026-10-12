@@ -7,9 +7,10 @@ Nothing here uses an LLM at runtime. The tracklist comes from one Apify REST cal
 playlist, lyrics from LRCLIB, audio through yt-dlp, and everything is cached on disk so
 it is fetched once.
 
-> Status: under construction. Syncing (`sync`, `status`, `pin`) and the daemon (`serve`,
-> the remote page, `ctl`) work. The lyric `overlay` and the installer for running the
-> daemon from a reviewed copy are not built yet. This README grows with each stage.
+> Status: under construction. Syncing (`sync`, `status`, `pin`), the daemon (`serve`,
+> the remote page, `ctl`) and the lyric `overlay` work from this repo. The installer for
+> running the daemon and overlay from a reviewed copy is not built yet, and the overlay
+> has only been verified in a headless compositor, not above a real fullscreen game.
 
 ## How it fits together
 
@@ -116,13 +117,41 @@ The daemon listens on loopback only, refuses requests that do not name its own a
 or that come from another web origin, takes playlist and track IDs but never file
 paths, and has no endpoint that downloads anything.
 
+## The overlay
+
+```bash
+.venv/bin/python -m playlist_player overlay          # follows the daemon; Ctrl-C to quit
+.venv/bin/python -m playlist_player overlay --demo   # a fixed line, for positioning
+```
+
+The overlay shows the current lyric line on the compositor's overlay layer, the one
+drawn above fullscreen windows. It takes no focus, clicks pass through it, and it is on
+screen only while a line is due: it is removed (not just made transparent) when playback
+pauses, between lines, for tracks without synced lyrics, and whenever the daemon is not
+running. It is a client of the daemon's API and nothing more.
+
+Position it with `--demo`: set `PLAYLIST_PLAYER_OVERLAY_ANCHOR` (an edge, a corner or
+`center`), the two margins, and optionally `PLAYLIST_PLAYER_OVERLAY_MONITOR`, then run it
+again. Font, size, colours, a second (next) line, how early a line appears and the fade
+are in the Configuration section below.
+
+It needs a Wayland compositor with the layer-shell protocol (KDE Plasma, Sway and other
+wlroots compositors; not GNOME) and the two `gtk4-layer-shell` packages from Setup. If a
+game ignores it, run the game in borderless-window mode rather than exclusive fullscreen.
+
 ## Development
 
 ```bash
 .venv/bin/python -m pytest                 # loopback only; spawns mpv (silent), ffmpeg and node
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 .venv/bin/python build.py                  # regenerate .env.example and the section below
+scripts/verify.sh                          # the three checks above; --head tests a clean export
+scripts/headless-kwin.sh run <command>     # run something in a display-less KWin, e.g. the overlay
 ```
+
+The overlay tests start that headless compositor themselves and are skipped where KWin
+or the layer-shell bindings are missing. `overlay --demo --snapshot out.png` renders one
+frame to a PNG (over a half dark, half light backdrop) for a look without a session.
 
 Everything under `cache/` is third-party content (audio, lyrics, tracklists) and is
 gitignored. Tests use synthetic data only; never commit a real lyric, audio file or

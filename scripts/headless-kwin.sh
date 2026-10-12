@@ -7,11 +7,18 @@
 #   scripts/headless-kwin.sh status           say whether it is running
 #   scripts/headless-kwin.sh run <command...> run a command inside it, starting it first
 #                                             and stopping it afterwards if this call started it
+#   scripts/headless-kwin.sh windows          print the compositor's own view of its windows
+#                                             as JSON, bottom of the stack first
 #
 # The compositor renders to a virtual framebuffer (kwin_wayland --virtual) on its own
 # private D-Bus session, so it cannot touch a real desktop session or its KWin. Clients
 # reach it through WAYLAND_DISPLAY, which `run` sets; after `start`, set it yourself:
 #   WAYLAND_DISPLAY=wl-pp-test <command>
+#
+# `windows` asks KWin itself, through its scripting interface, so a test can check from
+# outside a client which layer that client's surface really landed on. Each entry has
+# resourceClass, layer (KWin's number: 2 normal, 5 active/fullscreen, 8 on-screen display,
+# 9 overlay) and geometry as [x, y, width, height].
 #
 # Settings (environment, optional):
 #   PLAYLIST_PLAYER_TEST_WAYLAND   socket name, default wl-pp-test
@@ -82,7 +89,47 @@ stop() {
     rm -f "$PID_FILE" "$BUS_FILE" "$XDG_RUNTIME_DIR/$SOCKET" "$XDG_RUNTIME_DIR/$SOCKET.lock"
 }
 
+windows() {
+    is_running || die "the compositor is not running"
+    command -v qdbus6 >/dev/null || die "qdbus6 is not installed"
+    local nonce script name id line
+    nonce="PPWINDOWS-$$-$RANDOM"
+    name="pp-windows-$$-$RANDOM"
+    script="$STATE_DIR/$name.js"
+    # KWin scripts cannot return a value; console output lands in the compositor's log,
+    # so the script tags its one line with a nonce and we read that line back.
+    cat >"$script" <<JS
+const found = [];
+for (const w of workspace.stackingOrder) {
+    const g = w.frameGeometry;
+    found.push({
+        resourceClass: String(w.resourceClass),
+        layer: w.layer,
+        geometry: [g.x, g.y, g.width, g.height],
+    });
+}
+console.info("$nonce " + JSON.stringify(found));
+JS
+    export DBUS_SESSION_BUS_ADDRESS
+    DBUS_SESSION_BUS_ADDRESS="$(cat "$BUS_FILE")"
+    id="$(qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$script" "$name")" ||
+        die "KWin refused to load the script"
+    qdbus6 org.kde.KWin "/Scripting/Script$id" org.kde.kwin.Script.run >/dev/null ||
+        die "KWin refused to run the script"
+    line=""
+    for _ in $(seq 50); do
+        line="$(grep -F "$nonce " "$LOG_FILE" | tail -n 1 || true)"
+        [ -n "$line" ] && break
+        sleep 0.05
+    done
+    qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$name" >/dev/null || true
+    rm -f "$script"
+    [ -n "$line" ] || die "KWin ran the script but logged no answer"
+    printf '%s\n' "${line#*"$nonce" }"
+}
+
 case "${1:-}" in
+    windows) windows ;;
     start)
         start
         echo "$SOCKET"
@@ -113,7 +160,7 @@ case "${1:-}" in
         exit "$status"
         ;;
     *)
-        sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+        sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
         exit 1
         ;;
 esac
