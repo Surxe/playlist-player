@@ -4,9 +4,11 @@ end-to-end run with a real mpv (silent) playing generated tones.
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import shutil
+import socket
 import tempfile
 import threading
 import time
@@ -66,6 +68,9 @@ class EventStream:
         self._seen = threading.Condition()
         self._connection = http.client.HTTPConnection("127.0.0.1", daemon.port, timeout=10)
         self._connection.request("GET", "/api/v1/events")
+        # Kept for close(): http.client hands the socket over to the response and
+        # forgets it once a response has no Content-Length.
+        self._socket = self._connection.sock
         self._response = self._connection.getresponse()
         self.status = self._response.status
         self.headers = self._response.headers
@@ -95,7 +100,10 @@ class EventStream:
             assert self._seen.wait_for(predicate, timeout), (self.events[-3:], self.comments)
 
     def close(self) -> None:
-        # Closing the socket under the reader is the point: the client just goes away.
+        # The client just goes away. Shut the socket down first: that wakes the reader
+        # thread, which otherwise holds the response's lock until its read times out.
+        with contextlib.suppress(OSError):
+            self._socket.shutdown(socket.SHUT_RDWR)
         self._response.close()
         self._connection.close()
 
