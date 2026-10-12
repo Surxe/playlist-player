@@ -41,3 +41,7 @@ class NotFoundError(HttpError):
 
 class SourceError(PlaylistPlayerError):
     """A tracklist, lyrics or audio source could not produce a result."""
+
+
+class PlaybackError(PlaylistPlayerError):
+    """The player process or its control channel failed."""
