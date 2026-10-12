@@ -73,7 +73,9 @@ Actor response.
 
 Every setting can be given as a CLI flag, an environment variable, or a line in a `.env`
 file in the working directory, in that order of precedence. `APIFY_TOKEN` is the
-exception: environment only, never a flag.
+exception: supply it through the environment only. The generated list below shows a flag
+for it because the generator documents one for every option; that flag is deliberately
+not registered, so a token cannot end up on a command line.
 
 <!-- BEGIN_GENERATED_OPTIONS -->
 #### Storage
@@ -91,7 +93,7 @@ exception: environment only, never a flag.
 
 * **APIFY_TOKEN** - Apify API token. Environment only, never a CLI argument and never a committed file. Needed solely to fetch a playlist's track list that is not cached yet; see secrets.env.example for where the real value lives.
   - Default: None
-  - Command line: none (environment only)
+  - Command line: `--apify-token`
 
 * **PLAYLIST_PLAYER_TRACKLIST_ACTOR** - Apify Actor that returns a playlist's tracks, as user~name. The response shape is Actor-specific, so a new Actor also needs a parser.
   - Default: `"s-r~free-spotify-playlist-intelligence"`
