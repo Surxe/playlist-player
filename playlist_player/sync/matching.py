@@ -1,5 +1,10 @@
 """Choosing between candidates. Pure scoring: no I/O, tested on canned lists.
 
+Audio: a search returns the album recording, music videos with intros and outros, live
+takes, covers and remixes, all under similar titles. Lyric timestamps are made against
+the album recording, so that is the one to find: right length, uploaded as album audio,
+and not labelled as something else.
+
 Lyrics: a provider returns several records for one song, typically the same words timed
 against different releases whose lengths differ by a few seconds. The record whose
 duration is closest to the audio actually being played is the one whose timestamps will
@@ -12,9 +17,11 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 from ..lyrics import parse_lrc
 from ..models import LyricsKind, Track
+from ..sources.audio import AudioCandidate
 from ..sources.lyrics import LyricsRecord
 
 # ------------------------------ name matching ------------------------------ #
@@ -69,6 +76,143 @@ def is_same_song(track: Track, record: LyricsRecord) -> bool:
 
 def matching_records(track: Track, records: Iterable[LyricsRecord]) -> list[LyricsRecord]:
     return [record for record in records if is_same_song(track, record)]
+
+
+# ------------------------------ audio scoring ------------------------------ #
+
+# Points. A candidate at or above the threshold is downloaded without asking; below it
+# the track is flagged for review instead, with the best candidates listed for pinning.
+_DURATION_POINTS = 40.0  # full inside the tolerance, sliding to zero at the reject bound
+_TITLE_POINTS = 30.0  # the song's title appears in the candidate's title ...
+_TITLE_ABSENT = -30.0  # ... and if it does not, this is probably another song
+_ARTIST_POINTS = 15.0  # an artist's name appears in the title or the channel
+_ALBUM_AUDIO_POINTS = 25.0  # uploaded as the album recording
+_AUDIO_LABEL_POINTS = 5.0  # titled "(Audio)": the recording without a video's extras
+_OTHER_VERSION = -60.0  # labelled live, remix, cover, ... when the track is not
+AUDIO_REVIEW_THRESHOLD = 60.0
+
+# Labels that mean "not the album recording". Each is ignored when the track's own
+# title carries it. "lyrics" is deliberately absent: a lyric video is usually the album
+# audio, so it is neutral.
+_OTHER_VERSION_WORDS = (
+    "live", "remix", "cover", "karaoke", "instrumental", "sped up", "slowed", "nightcore",
+    "8d", "reverb", "acoustic", "reaction",
+)  # fmt: skip
+
+
+@dataclass(frozen=True, slots=True)
+class ScoredCandidate:
+    candidate: AudioCandidate
+    score: float
+    duration_delta_s: float  # candidate minus track
+    album_audio: bool
+    reasons: tuple[str, ...]  # what moved the score, for the review listing
+
+    @property
+    def acceptable(self) -> bool:
+        return self.score >= AUDIO_REVIEW_THRESHOLD
+
+    def summary(self) -> dict[str, Any]:
+        """What a person needs to judge this candidate by hand (stored with a miss)."""
+        c = self.candidate
+        return {
+            "id": c.id,
+            "url": c.url,
+            "title": c.title,
+            "channel": c.channel,
+            "duration_s": c.duration_s,
+            "score": round(self.score, 1),
+            "reasons": list(self.reasons),
+        }
+
+
+def _has_phrase(haystack: str, phrase: str) -> bool:
+    """Whole-word containment over already folded text."""
+    return bool(phrase) and f" {phrase} " in f" {haystack} "
+
+
+def is_album_audio(candidate: AudioCandidate) -> bool:
+    """Auto-generated album uploads: a "- Topic" channel, or the label's standard credit."""
+    return candidate.channel.rstrip().endswith(" - Topic") or (
+        candidate.description.lstrip().startswith("Provided to YouTube by")
+    )
+
+
+def score_audio(
+    track: Track, candidate: AudioCandidate, *, tolerance_s: float, reject_s: float
+) -> ScoredCandidate | None:
+    """Score one candidate, or ``None`` when it is rejected outright.
+
+    Rejected: no duration, or further from the track's length than ``reject_s``. A
+    recording that far off is a different edit, and its lyrics would never line up.
+    """
+    if candidate.duration_s is None:
+        return None
+    delta = candidate.duration_s - track.duration_s
+    distance = abs(delta)
+    if distance > reject_s:
+        return None
+
+    reasons: list[str] = []
+    if distance <= tolerance_s:
+        score = _DURATION_POINTS
+    else:
+        score = _DURATION_POINTS * (reject_s - distance) / (reject_s - tolerance_s)
+    reasons.append(f"duration {delta:+.0f}s")
+
+    title = _fold(candidate.title)
+    channel = _fold(candidate.channel)
+    track_title = _fold(track.title)
+    if _has_phrase(title, normalize_title(track.title)):
+        score += _TITLE_POINTS
+    else:
+        score += _TITLE_ABSENT
+        reasons.append("title differs")
+
+    if any(_has_phrase(title, a) or _has_phrase(channel, a) for a in map(_fold, track.artists)):
+        score += _ARTIST_POINTS
+    else:
+        reasons.append("no artist name")
+
+    album_audio = is_album_audio(candidate)
+    if album_audio:
+        score += _ALBUM_AUDIO_POINTS
+        reasons.append("album audio")
+
+    elif _has_phrase(title, "audio"):
+        score += _AUDIO_LABEL_POINTS
+        reasons.append("audio upload")
+
+    labels = [
+        word
+        for word in _OTHER_VERSION_WORDS
+        if _has_phrase(title, word) and not _has_phrase(track_title, word)
+    ]
+    if labels:
+        score += _OTHER_VERSION
+        reasons.append("labelled " + ", ".join(labels))
+
+    return ScoredCandidate(candidate, score, round(delta, 3), album_audio, tuple(reasons))
+
+
+def rank_audio(
+    track: Track, candidates: Iterable[AudioCandidate], *, tolerance_s: float, reject_s: float
+) -> list[ScoredCandidate]:
+    """Every candidate that survives rejection, best first.
+
+    Equal scores go to the one closer to the track's length, then to search order.
+    """
+    scored = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate.id in seen:
+            continue
+        seen.add(candidate.id)
+        result = score_audio(track, candidate, tolerance_s=tolerance_s, reject_s=reject_s)
+        if result is not None:
+            scored.append(result)
+    scored.sort(key=lambda item: (-item.score, abs(item.duration_delta_s)))  # stable
+    return scored
 
 
 # ----------------------------- lyric selection ----------------------------- #

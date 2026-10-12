@@ -43,9 +43,11 @@ def _pending(stage: int) -> Handler:
 def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
     from .cache import CacheStore, MissLog
     from .http import HttpClient
+    from .sources.audio import YtDlpSource
     from .sources.lyrics import LrclibSource
     from .sources.tracklist import build_tracklist_source, playlist_id_from
     from .sync import report
+    from .sync.audio import AudioStage
     from .sync.lyrics import LyricsStage
     from .sync.pipeline import Pipeline
     from .sync.tracklist import load_tracklist, tracklist_is_cached
@@ -93,6 +95,12 @@ def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
 
     # Stages in pipeline order: lyrics are chosen against the real audio's length.
     stages = {
+        "audio": lambda: AudioStage(
+            store,
+            YtDlpSource(),
+            tolerance_s=settings.audio_duration_tolerance_s,
+            reject_s=settings.audio_duration_reject_s,
+        ),
         "lyrics": lambda: LyricsStage(
             store,
             LrclibSource(http, base_url=settings.lrclib_base_url),
@@ -134,6 +142,19 @@ def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
     return status
 
 
+def _cmd_pin(args: argparse.Namespace, settings: Settings) -> int:
+    from .cache import CacheStore, MissLog
+    from .sync.pin import pin_audio
+
+    store = CacheStore(settings.cache_dir, settings.state_dir)
+    url = None if args.url == "clear" else args.url
+    track = pin_audio(store, MissLog(store), args.track, url)
+    action = "cleared the audio pin for" if url is None else "pinned audio for"
+    print(f"{action} {track.id} ({track.primary_artist} - {track.title})")
+    print(f"  its cached audio and lyrics were removed; run: sync <playlist> --track {track.id}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     # Settings flags are shared by every command, so they hang off a parent parser.
     common = argparse.ArgumentParser(add_help=False)
@@ -173,7 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     status = add("status", "Show what is cached for a playlist.", _pending(5))
     status.add_argument("playlist", nargs="?", help="playlist ID; omit to list cached playlists")
 
-    pin = add("pin", "Choose the audio for a track by hand.", _pending(4))
+    pin = add("pin", "Choose the audio for a track by hand.", _cmd_pin)
     pin.add_argument("track", help="track ID")
     pin.add_argument("url", help="URL of the audio to use, or `clear` to remove the pin")
 

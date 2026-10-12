@@ -33,7 +33,9 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -185,6 +187,31 @@ class CacheStore:
             return default
         except json.JSONDecodeError as exc:
             raise CacheError(f"corrupt cache file {path}: {exc}") from exc
+
+    @contextlib.contextmanager
+    def work_dir(self, parent: Path) -> Iterator[Path]:
+        """A hidden scratch directory inside ``parent``, removed on exit.
+
+        Downloads land here and are moved out with :meth:`adopt` once complete, so an
+        interrupted one never has a final name. Leftovers from a killed run are swept
+        the next time the same parent is used.
+        """
+        self._require_inside(parent)
+        ensure_dir(parent)
+        for stale in parent.glob(".work.*"):
+            shutil.rmtree(stale, ignore_errors=True)
+        work = Path(tempfile.mkdtemp(dir=parent, prefix=".work."))
+        try:
+            yield work
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def adopt(self, source: Path, dest: Path) -> None:
+        """Move a finished file on the same filesystem into the cache under its final name."""
+        self._require_inside(dest)
+        ensure_dir(dest.parent)
+        os.chmod(source, FILE_MODE)
+        os.replace(source, dest)
 
     def remove(self, path: Path) -> bool:
         """Delete ``path`` if it exists. Returns whether anything was removed."""
