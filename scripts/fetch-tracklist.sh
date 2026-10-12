@@ -7,9 +7,16 @@
 # This is the only step in the whole tool that needs the Apify token, and it runs once
 # per playlist: the response is written verbatim to
 #   cache/playlists/<id>/tracklist.raw.json
-# and everything downstream (parsing, lyrics, audio) reads that file. An existing file is
-# never overwritten unless --refresh is given, because every run is a paid Actor run
-# (about $0.01 for one playlist, hard-capped by the max-charge setting below).
+# next to a small tracklist.meta.json naming the Actor that produced it (the response
+# shape is Actor-specific, so the parser needs to know). Everything downstream (parsing,
+# lyrics, audio) reads those files. An existing file is never overwritten unless
+# --refresh is given, because every run is a paid Actor run (about $0.01 for one
+# playlist, hard-capped by the max-charge setting below).
+#
+# Actor choice: s-r/free-spotify-playlist-intelligence pages through the whole playlist.
+# The first Actor tried (automation-lab/spotify-scraper) reads Spotify's embed page, which
+# stops at 100 tracks, and reports its own array length as the track count, so the
+# truncation was invisible. Do not switch back to it for playlists over 100 tracks.
 #
 # Token handling: APIFY_TOKEN is taken from the environment when set (the launcher
 # route, where an ethan-owned launcher injects it into a dev-side run), otherwise it is
@@ -20,7 +27,8 @@
 # Settings (environment, all optional):
 #   PLAYLIST_PLAYER_SECRETS               default ~/.config/playlist-player/secrets.env
 #   PLAYLIST_PLAYER_CACHE_DIR             default <repo>/cache
-#   PLAYLIST_PLAYER_TRACKLIST_ACTOR       default automation-lab~spotify-scraper
+#   PLAYLIST_PLAYER_TRACKLIST_ACTOR       default s-r~free-spotify-playlist-intelligence
+#                                         (an override must accept the same input)
 #   PLAYLIST_PLAYER_APIFY_MAX_CHARGE_USD  default 0.05
 #   PLAYLIST_PLAYER_APIFY_BASE_URL        default https://api.apify.com (tests point this
 #                                         at a local stub)
@@ -35,7 +43,7 @@ umask 002
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SECRETS="${PLAYLIST_PLAYER_SECRETS:-$HOME/.config/playlist-player/secrets.env}"
 CACHE_DIR="${PLAYLIST_PLAYER_CACHE_DIR:-$REPO_ROOT/cache}"
-ACTOR="${PLAYLIST_PLAYER_TRACKLIST_ACTOR:-automation-lab~spotify-scraper}"
+ACTOR="${PLAYLIST_PLAYER_TRACKLIST_ACTOR:-s-r~free-spotify-playlist-intelligence}"
 MAX_CHARGE="${PLAYLIST_PLAYER_APIFY_MAX_CHARGE_USD:-0.05}"
 API_BASE="${PLAYLIST_PLAYER_APIFY_BASE_URL:-https://api.apify.com}"
 
@@ -90,17 +98,27 @@ id="$(playlist_id "$target")" || die "cannot find a playlist ID in: $target"
 url="https://open.spotify.com/playlist/$id"
 out_dir="$CACHE_DIR/playlists/$id"
 out="$out_dir/tracklist.raw.json"
+meta="$out_dir/tracklist.meta.json"
+
+# The playlist's own total as the Actor reports it. Field name differs between Actors.
+TOTAL='(.total_tracks // .track_count // .trackCount)'
 
 summarize() {
-    jq -r '.[0] | "  type:        \(.type)\n  name:        \(.name)\n  trackCount:  \(.trackCount)\n  tracks got:  \(.tracks | length)"' "$1"
+    jq -r ".[0] | \"  name:            \(.name)\n  playlist total:  \($TOTAL)\n  tracks fetched:  \(.tracks | length)\"" "$1"
+    if [ -s "$meta" ]; then
+        jq -r '"  fetched by:      \(.actor) at \(.fetched_at)"' "$meta"
+    else
+        echo "  fetched by:      unknown (no tracklist.meta.json; predates the Actor switch)"
+    fi
 }
 
-# Exit 2 when the Actor returned fewer tracks than the playlist says it has.
+# Exit 2 when the Actor returned fewer tracks than the playlist says it has. This only
+# works for an Actor that reports Spotify's real total; see the header note.
 check_complete() {
-    if jq -e '.[0] | (.trackCount // -1) == (.tracks | length)' "$1" >/dev/null; then
+    if jq -e ".[0] | ($TOTAL // -1) == (.tracks | length)" "$1" >/dev/null; then
         return 0
     fi
-    echo "fetch-tracklist: WARNING: track array length differs from trackCount; the Actor may truncate long playlists." >&2
+    echo "fetch-tracklist: WARNING: fewer tracks fetched than the playlist total; the result is incomplete." >&2
     return 2
 }
 
@@ -126,8 +144,9 @@ tmp="$(mktemp "$out_dir/.tracklist.raw.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 
 endpoint="$API_BASE/v2/acts/$ACTOR/run-sync-get-dataset-items?clean=true&format=json&maxTotalChargeUsd=$MAX_CHARGE"
-# One playlist is one dataset item whose `tracks` array holds every track.
-body="$(jq -cn --arg url "$url" '{mode: "urls", urls: [$url], maxResults: 1}')"
+# One playlist is one dataset row whose `tracks` array holds every track. trackDiffs is
+# off so the Actor does not keep playlist snapshots in a named store on the account.
+body="$(jq -cn --arg url "$url" '{playlists: [$url], trackDiffs: false, pageSize: 100}')"
 
 echo "Starting a paid Actor run ($ACTOR, capped at \$$MAX_CHARGE) for playlist $id ..."
 # The run-sync endpoint holds the connection open until the run finishes (up to 300 s).
@@ -150,13 +169,17 @@ case "$http_code" in
         ;;
 esac
 
-jq -e 'type == "array" and length >= 1 and (.[0].tracks | type == "array")' "$tmp" >/dev/null ||
-    die "response is not a playlist record with a tracks array; nothing written. First bytes: $(head -c 300 "$tmp")"
+# A failed playlist still comes back as a row (an error row with no tracks), so a 2xx
+# status alone does not mean the fetch worked.
+jq -e 'type == "array" and length >= 1 and (.[0].tracks | type == "array") and (.[0].tracks | length >= 1)' "$tmp" >/dev/null ||
+    die "response is not a playlist row with a non-empty tracks array; nothing written. First bytes: $(head -c 400 "$tmp")"
 
 # mktemp creates the file 0600 regardless of umask; open it up before it takes its name.
 chmod 664 "$tmp"
 mv "$tmp" "$out"
 trap - EXIT
+jq -n --arg actor "$ACTOR" --arg url "$url" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{actor: $actor, playlist_url: $url, fetched_at: $at}' >"$meta"
 
 echo "Saved: $out"
 summarize "$out"
