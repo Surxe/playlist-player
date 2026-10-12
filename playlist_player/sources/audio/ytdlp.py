@@ -9,7 +9,7 @@ yt-dlp breaks whenever YouTube changes something, which is often. Every yt-dlp e
 turned into a ``SourceError`` so one bad track cannot stop a sync; the first remedy is
 always ``.venv/bin/pip install -U yt-dlp``.
 
-yt-dlp is imported inside the methods: the daemon and overlay run from an installed copy
+yt-dlp is imported inside the methods: the daemon and overlay must run on a Python
 that does not have it, and nothing else in the package should pay for importing it.
 """
 
