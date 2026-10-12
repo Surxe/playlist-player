@@ -47,6 +47,11 @@ DIR_MODE = 0o2775
 _ID_RE = re.compile(r"^[A-Za-z0-9]{1,64}$")
 
 
+# A file name recorded in a provenance JSON. It is read back from disk, so it is checked
+# before being joined onto a directory: no separators, no leading dot.
+_FILE_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$")
+
+
 def validate_id(value: str) -> str:
     """Return ``value`` if it is safe to use as a directory name, else raise."""
     if not isinstance(value, str) or not _ID_RE.fullmatch(value):
@@ -130,6 +135,12 @@ class CacheStore:
     def track_json(self, track_id: str) -> Path:
         return self.track_dir(track_id) / "track.json"
 
+    def track_file(self, track_id: str, name: str) -> Path:
+        """A file inside the track's directory by bare name, e.g. the audio file."""
+        if not _FILE_NAME_RE.fullmatch(name):
+            raise CacheError(f"not a plain file name: {name!r}")
+        return self.track_dir(track_id) / name
+
     def audio_json(self, track_id: str) -> Path:
         return self.track_dir(track_id) / "audio.json"
 
@@ -174,6 +185,15 @@ class CacheStore:
             return default
         except json.JSONDecodeError as exc:
             raise CacheError(f"corrupt cache file {path}: {exc}") from exc
+
+    def remove(self, path: Path) -> bool:
+        """Delete ``path`` if it exists. Returns whether anything was removed."""
+        self._require_inside(path)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        return True
 
     def has(self, path: Path) -> bool:
         """True when ``path`` is a non-empty file. A zero-byte file counts as absent."""

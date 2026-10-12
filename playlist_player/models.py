@@ -133,6 +133,86 @@ class Lyrics:
 
 
 @dataclass(frozen=True, slots=True)
+class AudioAsset:
+    """Provenance of a track's cached audio file (``audio.json``)."""
+
+    file: str  # file name inside the track's cache directory
+    duration_s: float  # measured from the file, not taken from the source's metadata
+    source: str
+    source_id: str | None = None
+    url: str | None = None
+    title: str | None = None
+    channel: str | None = None
+    codec: str | None = None
+    score: float | None = None
+    pinned: bool = False
+    fetched_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AudioAsset:
+        known = {name: data[name] for name in cls.__dataclass_fields__ if name in data}
+        known["duration_s"] = float(known["duration_s"])
+        return cls(**known)
+
+
+@dataclass(frozen=True, slots=True)
+class LyricsInfo:
+    """Provenance of a track's cached lyrics (``lyrics.json``).
+
+    ``reference`` says which duration the record was chosen against: ``audio`` (the real
+    file, which is what keeps the overlay in time) or ``spotify`` (no audio yet).
+    ``timing_confidence`` is ``low`` when even the best synced record is further from
+    that duration than the tolerance; it is ``None`` for lyrics that carry no timing.
+    """
+
+    kind: LyricsKind
+    source: str
+    file: str | None = None
+    record_id: str | None = None
+    record_duration_s: float | None = None
+    reference: str = "spotify"
+    reference_duration_s: float | None = None
+    duration_delta_s: float | None = None
+    timing_confidence: str | None = None
+    chosen_by: str | None = None
+    fetched_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["kind"] = self.kind.value
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LyricsInfo:
+        known = {name: data[name] for name in cls.__dataclass_fields__ if name in data}
+        known["kind"] = LyricsKind(known["kind"])
+        return cls(**known)
+
+
+@dataclass(frozen=True, slots=True)
+class TrackState:
+    """Hand-authored per-track values (``state/tracks/<id>.json``); survive a cache wipe."""
+
+    offset_ms: int = 0
+    audio_pin: str | None = None
+    notes: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TrackState:
+        return cls(
+            offset_ms=int(data.get("offset_ms") or 0),
+            audio_pin=data.get("audio_pin") or None,
+            notes=str(data.get("notes") or ""),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class PlaybackState:
     """The wire contract between the daemon and its clients.
 

@@ -7,9 +7,9 @@ Nothing here uses an LLM at runtime. The tracklist comes from one Apify REST cal
 playlist, lyrics from LRCLIB, audio through yt-dlp, and everything is cached on disk so
 it is fetched once.
 
-> Status: under construction. `sync` loads and normalizes a playlist's tracklist; the
-> audio, lyrics and cover stages, and `serve`, `ctl` and `overlay`, are registered but not
-> built yet. This README grows with each stage.
+> Status: under construction. `sync` loads a playlist's tracklist and fetches time-synced
+> lyrics from LRCLIB; the audio and cover stages, and `serve`, `ctl` and `overlay`, are
+> registered but not built yet. This README grows with each stage.
 
 ## How it fits together
 
