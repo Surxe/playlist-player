@@ -26,18 +26,8 @@ from .errors import PlaylistPlayerError
 
 Handler = Callable[[argparse.Namespace, Settings], int]
 
-# Exit status for a command that exists but is not built yet.
-_NOT_BUILT = 3
 # Exit status when a command did its work but the tracklist it worked from is incomplete.
 _INCOMPLETE = 2
-
-
-def _pending(stage: int) -> Handler:
-    def handler(args: argparse.Namespace, settings: Settings) -> int:
-        print(f"{args.command}: not built yet (planned for stage {stage})", file=sys.stderr)
-        return _NOT_BUILT
-
-    return handler
 
 
 def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
@@ -194,6 +184,12 @@ def _cmd_ctl(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _cmd_overlay(args: argparse.Namespace, settings: Settings) -> int:
+    from .overlay.main import run
+
+    return run(settings, demo=args.demo, snapshot=args.snapshot)
+
+
 def build_parser() -> argparse.ArgumentParser:
     # Settings flags are shared by every command, so they hang off a parent parser.
     common = argparse.ArgumentParser(add_help=False)
@@ -247,7 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ctl.add_argument("value", nargs="?", help="seconds for seek (+10, -5, 90), 0-100 for volume")
 
-    overlay = add("overlay", "Show the current lyric line above other windows.", _pending(8))
+    overlay = add("overlay", "Show the current lyric line above other windows.", _cmd_overlay)
     overlay.add_argument(
         "--demo", action="store_true", help="show a placeholder line, for positioning"
     )
