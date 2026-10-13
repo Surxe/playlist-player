@@ -97,6 +97,14 @@ class FakePlayer:
         self.loaded_at = self.position
         self._publish()
 
+    def reorder(self, queue) -> None:
+        self._record("reorder", [e.track_id for e in queue.entries])
+        current = self.queue.entry_at(self.index)
+        self.queue = queue
+        if current is not None:
+            self.index = queue.index_of(current.track_id)
+        self._publish()
+
     def play(self) -> None:
         self._record("play")
         self.paused = False

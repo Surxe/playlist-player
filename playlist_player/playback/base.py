@@ -26,6 +26,14 @@ class Player(Protocol):
         """
         ...
 
+    def reorder(self, queue: PlayQueue) -> None:
+        """Put the loaded queue's tracks in ``queue``'s order without interrupting playback.
+
+        ``queue`` holds the same tracks as the one loaded. Whatever is playing keeps
+        playing from where it is; only what comes before and after it changes.
+        """
+        ...
+
     def play(self) -> None:
         """Resume; after the queue has ended or been stopped, start it again."""
         ...

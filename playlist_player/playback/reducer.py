@@ -57,6 +57,10 @@ class MpvStateReducer:
         self._ended = False
         self._error = None
 
+    def replace_queue(self, queue: PlayQueue) -> None:
+        """The same tracks in a new order. Nothing about playback itself has changed."""
+        self.queue = queue
+
     def set_fatal(self, message: str | None) -> None:
         """Mark the player as dead (or alive again). Resets what mpv had told us."""
         self._fatal = message

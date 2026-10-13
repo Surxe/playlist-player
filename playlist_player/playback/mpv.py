@@ -81,6 +81,8 @@ class MpvPlayer:
         self._restart_available = True
         # A position to seek to once mpv reports the first file open (see load_queue).
         self._resume_at: float | None = None
+        # True while the playlist is being rearranged; nothing is published meanwhile.
+        self._reordering = False
         self._thread: threading.Thread | None = None
 
     # ------------------------------ lifecycle ------------------------------ #
@@ -213,6 +215,44 @@ class MpvPlayer:
             self._command("set_property", "playlist-start", queue.start_index)
             self._command("loadlist", str(self._playlist_file), "replace")
 
+    def reorder(self, queue: PlayQueue) -> None:
+        with self._lock:
+            current = [entry.path for entry in self._reducer.queue.entries]
+            wanted = [entry.path for entry in queue.entries]
+            if sorted(current) != sorted(wanted):
+                # Not the tracks mpv holds (it was restarted, say): load them instead.
+                self._reload_keeping_place(queue)
+                return
+            # mpv moves entries within its own playlist, so the file that is playing is
+            # never touched. Each move can shift the current entry's index, which would
+            # publish a snapshot per move; hold those back and publish once at the end.
+            self._reordering = True
+            try:
+                self._reducer.replace_queue(queue)
+                for index, path in enumerate(wanted):
+                    found = current.index(path, index)
+                    if found != index:
+                        self._command("playlist-move", found, index)
+                        current.insert(index, current.pop(found))
+            except MpvCommandError:
+                self._reordering = False
+                self._reload_keeping_place(queue)  # half moved: start over from a known state
+            finally:
+                self._reordering = False
+                self._inbox.put(_REFRESH)
+
+    def _reload_keeping_place(self, queue: PlayQueue) -> None:
+        """Load ``queue`` at the track and position that are playing now. Lock held."""
+        entry = self._reducer.current_entry()
+        position = self._position()[0] if entry is not None else None
+        paused = self._reducer.paused or self._reducer.idle
+        resumed = PlayQueue(
+            queue.entries,
+            playlist_id=queue.playlist_id,
+            start_track_id=entry.track_id if entry is not None else None,
+        )
+        self.load_queue(resumed, paused=paused, position_s=position)
+
     def play(self) -> None:
         with self._lock:
             if self._reducer.idle and len(self._reducer.queue):
@@ -317,7 +357,7 @@ class MpvPlayer:
                 # Heartbeat: while playing, a fresh snapshot now and then corrects drift.
                 playing = self._reducer.status() is PlayerStatus.PLAYING
                 due = playing and time.monotonic() - last_publish >= self._heartbeat_s
-            if due and not self._closing:
+            if due and not self._closing and not self._reordering:
                 self._publish()
                 last_publish = time.monotonic()
 

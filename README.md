@@ -115,11 +115,12 @@ from mpv. Pick a playlist, click a track, and the lyric pane follows the song; t
 offset buttons shift a track's lyrics earlier or later and the value is remembered in
 `state/`. Space toggles, left and right seek five seconds, up and down change track.
 
-**Shuffle** is kept by the daemon. Turning it on draws one random order of the playlist's
-playable tracks, and starting a different playlist while it is on draws another. That order
-is kept, so it plays the same way after a restart, and starting a track part-way through
-plays on from its place in it. A new order takes effect from the next playlist or track you
-start; the queue already playing is not reshuffled.
+**Shuffle** puts the playlist shown in a new random order and keeps it. The track list
+is redrawn in that order, it is the order the playlist plays in from then on, and it is
+still there after a restart. If that playlist is playing, the queue is rearranged at once
+without interrupting the song, which is placed first so that everything else is still to
+come. Press it again for another order; **Original order** puts the playlist back the way
+it is on Spotify. Tracks a later sync adds go to the end of a kept order.
 
 **Resume.** The daemon remembers the playlist, the song, its position and the volume, and
 puts them back when it starts: the same song at the same place, at the same volume, paused.
@@ -176,7 +177,7 @@ fullscreen.
 |------|-------|
 | `cache/` | Everything fetched: track lists, audio, lyrics, covers. Safe to delete; `sync` rebuilds it. |
 | `state/` | What you changed by hand: lyric offsets, audio pins, and overlay settings set from the page. Not rebuilt. |
-| `state/session.json` | What the daemon resumes: shuffle and its order, the playlist, song, position and volume. Rewritten as playback changes; deleting it just starts fresh. |
+| `state/session.json` | Each shuffled playlist's order, and what the daemon resumes: the playlist, song, position and volume. Rewritten as playback changes; deleting it just starts fresh. |
 
 Both are gitignored and sit in the repo by default; `PLAYLIST_PLAYER_CACHE_DIR` and
 `PLAYLIST_PLAYER_STATE_DIR` move them. Files get ordinary permissions, whatever your

@@ -1,4 +1,4 @@
-"""The daemon's session: the shuffle order, what is saved, and what a restart resumes."""
+"""The daemon's session: a playlist's kept order, what is saved, and what a restart resumes."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ import threading
 
 import pytest
 
+from playlist_player.cache import assets
+from playlist_player.config import load_settings
 from playlist_player.errors import NotInCacheError
 from playlist_player.models import PlaybackState, PlayerStatus
 from playlist_player.server.app import Daemon
@@ -25,10 +27,8 @@ def library(store):
     return Library(store)
 
 
-def session_on(
-    store, library, player=None, *, seed=1, clock=None
-) -> tuple[PlaybackSession, FakePlayer]:
-    player = player or FakePlayer()
+def session_on(store, library, *, seed=1, clock=None) -> tuple[PlaybackSession, FakePlayer]:
+    player = FakePlayer()
     kwargs = {"rng": random.Random(seed)}
     if clock is not None:
         kwargs["clock"] = clock
@@ -39,90 +39,131 @@ def saved(store) -> dict:
     return json.loads(store.session_json.read_text())
 
 
-# ------------------------------- shuffle -------------------------------- #
+def ids(queue) -> list[str]:
+    return [entry.track_id for entry in queue.entries]
 
 
-def test_a_shuffle_draws_one_order_of_the_playable_tracks_and_keeps_it(store, library):
+# --------------------------------- order --------------------------------- #
+
+
+def test_an_unshuffled_playlist_plays_in_its_own_order(store, library):
     session, _ = session_on(store, library)
-    first = session.queue_for(PLAYLIST_ID, start_track_id=None, shuffle=True)
-    order = [e.track_id for e in first.entries]
-    assert sorted(order) == PLAYABLE and order != PLAYABLE
-    assert saved(store)["order"] == order and saved(store)["order_playlist_id"] == PLAYLIST_ID
+    assert ids(session.queue_for(PLAYLIST_ID)) == PLAYABLE
+    assert saved(store)["orders"] == {}
 
-    again = session.queue_for(PLAYLIST_ID, start_track_id=None, shuffle=True)
-    assert [e.track_id for e in again.entries] == order
+
+def test_shuffling_draws_a_new_order_of_the_playable_tracks_and_keeps_it(store, library):
+    session, _ = session_on(store, library)
+    order = session.shuffle(PLAYLIST_ID)
+    assert sorted(order) == PLAYABLE and order != PLAYABLE
+    assert saved(store)["orders"] == {PLAYLIST_ID: order}
+    # It is the playlist's order from now on: every load plays it.
+    assert ids(session.queue_for(PLAYLIST_ID)) == order
+    assert ids(session.queue_for(PLAYLIST_ID, start_track_id="TRK0002")) == order
+
+
+def test_each_shuffle_gives_a_different_order(store, library):
+    session, _ = session_on(store, library)
+    seen = [session.shuffle(PLAYLIST_ID) for _ in range(12)]
+    assert all(later != earlier for earlier, later in zip(seen, seen[1:], strict=False))
+    assert all(sorted(order) == PLAYABLE for order in seen)
 
 
 def test_the_order_survives_a_restart(store, library):
-    session, _ = session_on(store, library)
-    order = [e.track_id for e in session.queue_for(PLAYLIST_ID, start_track_id=None,
-                                                   shuffle=True).entries]  # fmt: skip
+    order = session_on(store, library)[0].shuffle(PLAYLIST_ID)
     later, _ = session_on(store, library, seed=99)  # a different random source, same file
-    assert [e.track_id for e in later.queue_for(PLAYLIST_ID, start_track_id=None,
-                                                shuffle=True).entries] == order  # fmt: skip
+    assert ids(later.queue_for(PLAYLIST_ID)) == order
 
 
-def test_starting_a_track_in_a_shuffle_plays_on_from_its_place(store, library):
+def test_starting_a_track_plays_on_from_its_place_in_the_order(store, library):
     session, _ = session_on(store, library)
-    queue = session.queue_for(PLAYLIST_ID, start_track_id="TRK0002", shuffle=True)
-    order = [e.track_id for e in queue.entries]
-    assert queue.start_index == order.index("TRK0002")
+    order = session.shuffle(PLAYLIST_ID)
+    assert session.queue_for(PLAYLIST_ID, start_track_id="TRK0002").start_index == order.index(
+        "TRK0002"
+    )
 
 
-def test_turning_shuffle_off_plays_in_playlist_order_and_forgets_the_order(store, library):
+def test_restoring_puts_the_playlist_back_in_its_own_order(store, library):
     session, _ = session_on(store, library)
-    session.queue_for(PLAYLIST_ID, start_track_id=None, shuffle=True)
-    session.set_shuffle(False)
-    queue = session.queue_for(PLAYLIST_ID, start_track_id=None, shuffle=False)
-    assert [e.track_id for e in queue.entries] == PLAYABLE
-    assert "order" not in saved(store) and saved(store)["shuffle"] is False
+    session.shuffle(PLAYLIST_ID)
+    session.restore(PLAYLIST_ID)
+    assert ids(session.queue_for(PLAYLIST_ID)) == PLAYABLE
+    assert saved(store)["orders"] == {}
+    session.restore(PLAYLIST_ID)  # nothing kept: nothing to do, and not an error
 
 
-def test_turning_shuffle_on_draws_a_fresh_order_for_the_playlist(store, library):
-    session, _ = session_on(store, library, seed=3)
-    session.queue_for(PLAYLIST_ID, start_track_id=None, shuffle=True)
-    before = saved(store)["order"]
-    session.set_shuffle(False)
-    session.set_shuffle(True)
-    assert saved(store)["order"] != before  # the next draw, from the same seeded source
-    assert sorted(saved(store)["order"]) == PLAYABLE
+def test_shuffling_the_playlist_that_is_playing_rearranges_the_queue_around_the_song(
+    store, library
+):
+    session, player = session_on(store, library)
+    player.load_queue(session.queue_for(PLAYLIST_ID, start_track_id="TRK0002"))
+    order = session.shuffle(PLAYLIST_ID)
+    # The song that is on comes first, so everything else is still to come.
+    assert order[0] == "TRK0002" and sorted(order) == PLAYABLE
+    assert player.calls[-1] == ("reorder", order)
+    assert player.bus.current.track_id == "TRK0002" and player.bus.current.queue_index == 0
+
+    session.restore(PLAYLIST_ID)
+    assert player.calls[-1] == ("reorder", PLAYABLE)
+    assert player.bus.current.track_id == "TRK0002" and player.bus.current.queue_index == 2
 
 
-def test_turning_shuffle_on_with_nothing_loaded_waits_for_the_first_load(store, library):
-    session, _ = session_on(store, library)
-    assert session.set_shuffle(True) == {
-        "shuffle": True, "playlist_id": None, "track_id": None, "position_s": 0.0, "volume": None,
-    }  # fmt: skip
-    assert "order" not in saved(store)
-    session.queue_for(PLAYLIST_ID, start_track_id=None, shuffle=True)
-    assert sorted(saved(store)["order"]) == PLAYABLE
+def test_shuffling_a_playlist_that_is_not_loaded_leaves_the_player_alone(store, library):
+    session, player = session_on(store, library)
+    session.shuffle(PLAYLIST_ID)
+    session.restore(PLAYLIST_ID)
+    assert player.calls == []
 
 
-def test_a_stale_order_is_replaced_not_played(store, library):
+def test_a_kept_order_follows_the_playlist_when_tracks_come_and_go(store, library):
     store.write_json(store.session_json, {
-        "shuffle": True, "playlist_id": PLAYLIST_ID,
-        "order": ["TRK0000", "TRK0009"], "order_playlist_id": PLAYLIST_ID,
+        "orders": {PLAYLIST_ID: ["TRK0003", "TRK0009", "TRK0001"]},
     })  # fmt: skip
     session, _ = session_on(store, library)
-    queue = session.queue_for(PLAYLIST_ID, start_track_id=None, shuffle=True)
-    assert sorted(e.track_id for e in queue.entries) == PLAYABLE
+    # TRK0009 is gone; TRK0000 and TRK0002 are new to the order and go to the end.
+    assert ids(session.queue_for(PLAYLIST_ID)) == ["TRK0003", "TRK0001", "TRK0000", "TRK0002"]
+    assert saved(store)["orders"][PLAYLIST_ID] == ["TRK0003", "TRK0001", "TRK0000", "TRK0002"]
 
 
-def test_an_order_for_another_playlist_is_not_reused(store, library):
+def test_a_track_that_gains_audio_joins_the_end_of_the_kept_order(store, library):
+    session, _ = session_on(store, library)
+    order = session.shuffle(PLAYLIST_ID)
+    donor = assets.track_status(store, "TRK0000").audio
+    store.write_bytes(store.track_file("TRK0004", donor.file), b"placeholder, not audio")
+    assets.write_audio(store, "TRK0004", donor)
+    assert ids(session.queue_for(PLAYLIST_ID)) == [*order, "TRK0004"]
+
+
+def test_the_track_list_is_described_in_the_kept_order(store, library):
+    session, _ = session_on(store, library)
+    plain = session.arranged(library.playlist(PLAYLIST_ID))
+    assert plain["shuffled"] is False
+    assert [t["id"] for t in plain["tracks"]] == [*PLAYABLE, "TRK0004"]
+
+    order = session.shuffle(PLAYLIST_ID)
+    arranged = session.arranged(library.playlist(PLAYLIST_ID))
+    assert arranged["shuffled"] is True
+    # The unplayable track has no place in an order; it follows the rest.
+    assert [t["id"] for t in arranged["tracks"]] == [*order, "TRK0004"]
+    assert arranged["coverage"] == plain["coverage"]
+
+
+def test_a_playlist_that_is_not_cached_is_refused_and_nothing_is_kept(store, library):
+    session, _ = session_on(store, library)
+    for action in (session.shuffle, session.restore, session.queue_for):
+        with pytest.raises(NotInCacheError):
+            action("NotCached")
+    assert not store.session_json.exists() or saved(store)["orders"] == {}
+
+
+def test_a_file_from_the_version_with_a_shuffle_switch_is_read_without_its_old_keys(store, library):
     store.write_json(store.session_json, {
-        "shuffle": True, "order": PLAYABLE[::-1], "order_playlist_id": "SOMEONE_ELSE",
+        "shuffle": True, "order": PLAYABLE[::-1], "order_playlist_id": PLAYLIST_ID,
+        "playlist_id": PLAYLIST_ID, "track_id": "TRK0001", "position_s": 2.0, "volume": 50.0,
     })  # fmt: skip
     session, _ = session_on(store, library)
-    queue = session.queue_for(PLAYLIST_ID, start_track_id=None, shuffle=True)
-    assert [e.track_id for e in queue.entries] != PLAYABLE[::-1]
-    assert saved(store)["order_playlist_id"] == PLAYLIST_ID
-
-
-def test_a_playlist_with_no_audio_is_refused_and_saves_nothing(store, library):
-    session, _ = session_on(store, library)
-    with pytest.raises(NotInCacheError):
-        session.queue_for("NotCached", start_track_id=None, shuffle=True)
-    assert not store.session_json.exists()
+    assert ids(session.queue_for(PLAYLIST_ID)) == PLAYABLE
+    assert set(saved(store)) == {"playlist_id", "track_id", "position_s", "volume", "orders"}
 
 
 # ------------------------------- recording ------------------------------ #
@@ -136,11 +177,9 @@ def test_nothing_is_saved_before_the_daemon_has_tried_to_resume(store, library):
 
 
 def test_what_plays_is_saved_as_it_changes(store, library):
-    now = [1000.0]
-    session, player = session_on(store, library, clock=lambda: now[0])
-    session.resume()  # nothing saved; enables saving
-    player.load_queue(session.queue_for(PLAYLIST_ID, start_track_id="TRK0001", shuffle=False))
-    player.position = 12.5
+    session, player = session_on(store, library)
+    session.resume()  # nothing saved yet; from here on it is
+    player.load_queue(session.queue_for(PLAYLIST_ID, start_track_id="TRK0001"))
     player.set_volume(35)
     document = saved(store)
     assert (document["playlist_id"], document["track_id"]) == (PLAYLIST_ID, "TRK0001")
@@ -163,7 +202,7 @@ def test_the_position_is_where_playback_is_now_not_where_the_snapshot_was(store,
 def test_a_stopped_or_empty_player_does_not_forget_the_song(store, library):
     session, player = session_on(store, library)
     session.resume()
-    player.load_queue(session.queue_for(PLAYLIST_ID, start_track_id="TRK0002", shuffle=False))
+    player.load_queue(session.queue_for(PLAYLIST_ID, start_track_id="TRK0002"))
     player.bus.publish(PlaybackState(status=PlayerStatus.IDLE, paused=True, volume=60.0))
     document = saved(store)
     assert document["track_id"] == "TRK0002" and document["volume"] == 60.0
@@ -186,8 +225,7 @@ def test_a_failed_save_is_reported_and_playback_goes_on(store, library, monkeypa
 
 def test_a_restart_puts_back_the_volume_and_loads_the_song_paused_at_its_position(store, library):
     store.write_json(store.session_json, {
-        "shuffle": False, "playlist_id": PLAYLIST_ID, "track_id": "TRK0001",
-        "position_s": 2.5, "volume": 45.0,
+        "playlist_id": PLAYLIST_ID, "track_id": "TRK0001", "position_s": 2.5, "volume": 45.0,
     })  # fmt: skip
     session, player = session_on(store, library)
     session.resume()
@@ -197,16 +235,15 @@ def test_a_restart_puts_back_the_volume_and_loads_the_song_paused_at_its_positio
     assert player.bus.current.status is PlayerStatus.PAUSED
 
 
-def test_a_shuffled_playlist_comes_back_in_its_saved_order(store, library):
+def test_a_shuffled_playlist_comes_back_in_its_kept_order(store, library):
     order = ["TRK0003", "TRK0000", "TRK0002", "TRK0001"]
     store.write_json(store.session_json, {
-        "shuffle": True, "playlist_id": PLAYLIST_ID, "track_id": "TRK0002", "position_s": 0,
-        "order": order, "order_playlist_id": PLAYLIST_ID,
+        "playlist_id": PLAYLIST_ID, "track_id": "TRK0002", "position_s": 0,
+        "orders": {PLAYLIST_ID: order},
     })  # fmt: skip
     session, player = session_on(store, library, seed=77)
     session.resume()
-    assert [e.track_id for e in player.queue.entries] == order
-    assert player.index == 2
+    assert ids(player.queue) == order and player.index == 2
 
 
 def test_a_song_saved_at_its_very_end_starts_again(store, library):
@@ -234,39 +271,32 @@ def test_a_damaged_session_file_starts_with_nothing_remembered(store, library, c
     store.session_json.write_text("{ not json")
     session, player = session_on(store, library)
     session.resume()
-    assert not any(call[0] == "load_queue" for call in player.calls)
+    assert player.calls == []
     assert "starting without the saved session" in capsys.readouterr().err
     assert session.document()["playlist_id"] is None
-
-
-def test_the_document_the_page_reads_is_what_is_saved(store, library):
-    session, _ = session_on(store, library)
-    session.queue_for(PLAYLIST_ID, start_track_id=None, shuffle=True)
-    document = session.document()
-    assert document["shuffle"] is True and document["playlist_id"] == PLAYLIST_ID
-    assert "order" not in document  # the order is kept, not sent
+    session.shuffle(PLAYLIST_ID)  # and it works normally from there
+    assert sorted(saved(store)["orders"][PLAYLIST_ID]) == PLAYABLE
 
 
 def test_a_daemon_that_stops_and_starts_again_plays_where_it_was(store, monkeypatch):
     monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
     monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
     build_library(store)
-    from playlist_player.config import load_settings
-
     settings = load_settings()
+
     first_player = FakePlayer()
     first = Daemon(settings, store, first_player, port=0, keepalive_s=0.5)
     threading.Thread(target=first.serve_forever, daemon=True).start()  # shutdown() waits for it
     first.session.resume()
-    first.routes.dispatch("POST", "/api/v1/session/shuffle", b'{"enabled": true}')
-    body = json.dumps({"playlist_id": PLAYLIST_ID, "shuffle": True}).encode()
-    first.routes.dispatch("POST", "/api/v1/player/load", body)
+    load = json.dumps({"playlist_id": PLAYLIST_ID, "start_track_id": "TRK0001"}).encode()
+    first.routes.dispatch("POST", "/api/v1/player/load", load)
+    first.routes.dispatch("POST", f"/api/v1/playlists/{PLAYLIST_ID}/shuffle", b"{}")
+    shuffled = ids(first_player.queue)
     first_player.set_volume(25)
     first_player.pause()  # paused, so the saved position is exact rather than extrapolated
-    first_player.index, first_player.position = 2, 1.75
+    first_player.next()
+    first_player.position = 1.75
     first_player._publish()
-    shuffled = [e.track_id for e in first_player.queue.entries]
-    first.session.flush()
     first.shutdown()
 
     second_player = FakePlayer()
@@ -274,23 +304,31 @@ def test_a_daemon_that_stops_and_starts_again_plays_where_it_was(store, monkeypa
     threading.Thread(target=second.serve_forever, daemon=True).start()
     second.session.resume()
     second.shutdown()
-    assert [e.track_id for e in second_player.queue.entries] == shuffled
-    assert second_player.index == 2 and second_player.loaded_at == pytest.approx(1.75)
-    assert ("set_volume", 25.0) in second_player.calls
-    assert second_player.paused is True
+    assert shuffled[0] == "TRK0001" and sorted(shuffled) == PLAYABLE
+    assert ids(second_player.queue) == shuffled
+    assert second_player.index == 1 and second_player.loaded_at == pytest.approx(1.75)
+    assert ("set_volume", 25.0) in second_player.calls and second_player.paused is True
 
 
-def test_saving_from_two_threads_leaves_a_whole_file(store, library):
+def test_saving_and_shuffling_from_several_threads_leave_a_whole_file(store, library):
     session, player = session_on(store, library)
     session.resume()
+    player.load_queue(session.queue_for(PLAYLIST_ID))
 
-    def hammer(n):
-        for i in range(40):
-            player.set_volume(float((n * 40 + i) % 100))
+    def volumes(n):
+        for i in range(30):
+            player.set_volume(float((n * 30 + i) % 100))
 
-    threads = [threading.Thread(target=hammer, args=(n,)) for n in range(4)]
+    def shuffles():
+        for _ in range(15):
+            session.shuffle(PLAYLIST_ID)
+
+    threads = [threading.Thread(target=volumes, args=(n,)) for n in range(3)]
+    threads += [threading.Thread(target=shuffles) for _ in range(2)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-    assert 0 <= saved(store)["volume"] <= 100
+    document = saved(store)
+    assert 0 <= document["volume"] <= 100
+    assert document["orders"][PLAYLIST_ID] == ids(player.queue)  # file and queue agree

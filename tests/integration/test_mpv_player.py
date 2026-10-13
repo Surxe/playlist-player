@@ -386,3 +386,69 @@ def test_a_socket_path_too_long_for_the_system_is_one_clear_error(tmp_path):
     with pytest.raises(PlaybackError, match="socket path is too long"):
         player.start()
     assert not deep.parent.exists()  # refused before anything was created or started
+
+
+def reordered(queue: PlayQueue, ids: list[str]) -> PlayQueue:
+    by_id = {entry.track_id: entry for entry in queue.entries}
+    return PlayQueue([by_id[track_id] for track_id in ids], playlist_id=queue.playlist_id)
+
+
+def test_reordering_the_queue_does_not_interrupt_the_song_that_is_playing(make_player, tones):
+    player, log = make_player(heartbeat_s=0.2)
+    queue = queue_of(tones, [30, 30, 30, 30, 30])
+    player.load_queue(queue, position_s=10)
+    log.wait_for(lambda s: s.track_id == "T0" and s.position_s >= 9.5 and playing()(s), timeout=8)
+    time.sleep(0.6)
+    before = log.bus.current
+
+    player.reorder(reordered(queue, ["T3", "T0", "T4", "T2", "T1"]))
+    time.sleep(0.8)
+    after = log.bus.current
+    # The same song, still playing, and the clock ran straight through the change.
+    assert (after.track_id, after.status) == ("T0", PlayerStatus.PLAYING)
+    assert after.queue_index == 1 and after.queue_length == 5
+    ran = (after.captured_at_epoch_ms - before.captured_at_epoch_ms) / 1000
+    assert after.position_s - before.position_s == pytest.approx(ran, abs=0.15)
+    between = [s for s in log.states if before.version < s.version <= after.version]
+    assert all(s.track_id == "T0" for s in between)
+    assert not any(s.status is PlayerStatus.LOADING for s in between)
+
+    # What follows is the new order, both ways.
+    player.next()
+    state = log.wait_for(playing("T4"), after=after.version, timeout=8)
+    player.next()
+    state = log.wait_for(playing("T2"), after=state.version, timeout=8)
+    player.prev()
+    state = log.wait_for(playing("T4"), after=state.version, timeout=8)
+    player.prev()
+    state = log.wait_for(playing("T0"), after=state.version, timeout=8)
+    player.prev()
+    log.wait_for(playing("T3"), after=state.version, timeout=8)
+
+
+def test_reordering_while_paused_or_stopped_keeps_the_place(make_player, tones):
+    player, log = make_player()
+    queue = queue_of(tones, [30, 30, 30])
+    player.load_queue(queue, paused=True, position_s=7)
+    log.wait_for(paused_at("T0", 7), timeout=8)
+    player.reorder(reordered(queue, ["T2", "T1", "T0"]))
+    time.sleep(0.6)
+    state = log.bus.current
+    assert (state.track_id, state.status, state.queue_index) == ("T0", PlayerStatus.PAUSED, 2)
+    assert state.position_s == pytest.approx(7, abs=0.1)
+
+    player.stop()
+    log.wait_for(lambda s: s.status is PlayerStatus.IDLE, after=state.version, timeout=8)
+    player.reorder(reordered(queue, ["T1", "T2", "T0"]))
+    player.play()  # a stopped queue starts again from its first track
+    log.wait_for(playing("T1"), after=state.version, timeout=8)
+
+
+def test_reordering_to_tracks_the_player_does_not_hold_loads_them_instead(make_player, tones):
+    player, log = make_player()
+    player.load_queue(queue_of(tones, [30, 30]))
+    state = log.wait_for(playing("T0"), timeout=8)
+    other = queue_of(tones, [30, 30, 30])
+    player.reorder(reordered(other, ["T2", "T0", "T1"]))
+    state = log.wait_for(lambda s: s.queue_length == 3 and s.track_id == "T0", timeout=8)
+    assert state.queue_index == 1

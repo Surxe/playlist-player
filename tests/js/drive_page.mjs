@@ -72,6 +72,15 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 await send("Page.enable");
 await send("Page.navigate", { url });
+// Navigation returns before the document exists; the steps assume it is there.
+for (let waited = 0; ; waited += 40) {
+  const ready = await evaluate(
+    `location.href === ${JSON.stringify(url)} && document.readyState === "complete"`,
+  );
+  if (ready) break;
+  if (waited > 10_000) fail("the page did not finish loading");
+  await sleep(40);
+}
 const results = [];
 for (const step of steps) {
   if ("eval" in step) {

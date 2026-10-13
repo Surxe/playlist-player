@@ -213,27 +213,62 @@ def test_the_sample_line_is_asked_for_kept_alive_and_withdrawn(daemon, tmp_path)
     assert daemon.player.calls == []  # the space did not toggle playback
 
 
-def test_the_shuffle_box_shows_and_saves_the_daemons_setting(daemon, tmp_path):
-    """Shuffle is kept by the daemon: the box is set from it, and changing it saves it."""
+LISTED = "[...document.querySelectorAll('#tracks li')].map((row) => row.dataset.id)"
+
+
+def as_js_string(value) -> str:
+    """``value`` as the browser's JSON.stringify would write it, quoted as a JS string."""
+    return json.dumps(json.dumps(value, separators=(",", ":")))
+
+
+READY = {"wait": "document.querySelectorAll('#tracks li').length === 5"}
+
+
+def test_shuffle_reorders_the_list_at_once_and_the_order_is_kept(daemon, tmp_path):
+    """Shuffle is an action: a new order, shown at once, and still there after a reload."""
+    own_order = [f"TRK000{i}" for i in range(5)]
     first = drive(daemon, tmp_path, [
-        {"wait": "document.getElementById('playlists').options.length"},
-        {"eval": "document.getElementById('shuffle').checked"},
+        READY,
+        {"eval": LISTED},
+        {"eval": "document.getElementById('unshuffle').hidden"},
         {"eval": "document.getElementById('shuffle').click()"},
-        {"wait": "document.getElementById('shuffle').checked"},
+        {"wait": "!document.getElementById('unshuffle').hidden"},
+        {"eval": LISTED},
     ])  # fmt: skip
-    assert first[1] is False
-    assert daemon.session.document()["shuffle"] is True
+    assert first[1] == own_order and first[2] is True
+    shuffled = first[-1]
+    assert shuffled != own_order and sorted(shuffled) == own_order
+    assert shuffled[-1] == "TRK0004"  # no audio: it has no place in the order
+    kept = json.loads(daemon.session._store.session_json.read_text())["orders"]
+    assert list(kept.values()) == [shuffled[:4]]
 
-    # A reload, as after a restart: the box comes back set.
+    # A reload, as after a restart: the same order, and the way back is offered.
     second = drive(daemon, tmp_path, [
-        {"wait": "document.getElementById('playlists').options.length"},
-        {"eval": "document.getElementById('shuffle').checked"},
+        READY,
+        {"eval": LISTED},
+        {"eval": "document.getElementById('unshuffle').hidden"},
+        {"eval": "document.getElementById('shuffle').click()"},
+        {"wait": f"JSON.stringify({LISTED}) !== {as_js_string(shuffled)}"},
+        {"eval": LISTED},
+        {"eval": "document.getElementById('unshuffle').click()"},
+        {"wait": "document.getElementById('unshuffle').hidden"},
+        {"eval": LISTED},
     ])  # fmt: skip
-    assert second[1] is True
+    assert second[1] == shuffled and second[2] is False
+    assert second[5] != shuffled and sorted(second[5]) == own_order  # shuffled again: new order
+    assert second[-1] == own_order
+    assert json.loads(daemon.session._store.session_json.read_text())["orders"] == {}
 
-    daemon.session.set_shuffle(False)
-    third = drive(daemon, tmp_path, [
-        {"wait": "document.getElementById('playlists').options.length"},
-        {"eval": "document.getElementById('shuffle').checked"},
+
+def test_clicking_a_track_in_a_shuffled_list_plays_on_down_the_list(daemon, tmp_path):
+    daemon.session.shuffle(next(iter(daemon.routes._library.playlists()))["id"])
+    results = drive(daemon, tmp_path, [
+        READY,
+        {"eval": LISTED},
+        {"eval": "document.querySelectorAll('#tracks li')[1].click()"},
+        {"wait": "document.querySelector('#tracks li.current')"},
+        {"eval": "document.querySelector('#tracks li.current').dataset.id"},
     ])  # fmt: skip
-    assert third[1] is False
+    listed = results[1]
+    assert results[-1] == listed[1]
+    assert daemon.player.calls[-1] == ("load_queue", listed[:4], 1)
