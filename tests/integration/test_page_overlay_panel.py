@@ -397,3 +397,31 @@ def test_the_bar_moves_while_the_song_plays_and_stops_when_it_is_paused(daemon, 
         {"eval": read},
     ])  # fmt: skip
     assert paused[1] == paused[3] == pytest.approx(0.5, abs=0.001)
+
+
+def test_the_fade_in_setting_is_shown_and_saved_from_the_settings_pane(daemon, tmp_path):
+    daemon.session.set_settings({"fade_in_s": 2.5})
+    typed = (
+        "(() => { const box = t.el('fade-in'); box.focus(); box.value = '4';"
+        " box.dispatchEvent(new Event('input', { bubbles: true })); box.blur(); })()"
+    )
+    dragged = (
+        "(() => { const s = t.el('fade-in-slider'); s.value = '6.5';"
+        " s.dispatchEvent(new Event('input', { bubbles: true })); })()"
+    )
+    results = drive(daemon, tmp_path, [
+        *OPEN,
+        {"wait": "t.el('fade-in').value === '2.5'"},
+        {"eval": "[t.el('fade-in').value, t.el('fade-in-slider').value]"},
+        {"eval": typed},
+        {"eval": "t.el('fade-in-slider').value"},  # the slider follows the box at once
+        {"eval": "t.pause(500)"},
+        {"eval": dragged},
+        {"eval": "t.el('fade-in').value"},
+        {"eval": "t.pause(500)"},
+        {"eval": "document.getElementById('playback-settings').textContent"},
+    ])[len(OPEN):]  # fmt: skip
+    assert results[1] == ["2.5", "2.5"]
+    assert results[3] == "4" and results[6] == "6.5"
+    assert "A change applies from the next start" in " ".join(results[-1].split())
+    assert daemon.session.document()["settings"] == {"fade_in_s": 6.5}

@@ -25,7 +25,7 @@ from ..playback.base import Player
 from .library import Library
 from .overlay_config import MAX_PREVIEW_S, OverlayConfig
 from .security import JSON_TYPE
-from .session import PlaybackSession
+from .session import PlaybackSession, SettingError
 
 API = "/api/v1"
 EVENTS_PATH = f"{API}/events"
@@ -116,6 +116,7 @@ class Routes:
             ("POST", re.compile(rf"{API}/player/volume"), self._volume),
             ("POST", re.compile(rf"{API}/tracks/{segment}/offset"), self._offset),
             ("GET", re.compile(rf"{API}/session"), self._session_get),
+            ("POST", re.compile(rf"{API}/session/settings"), self._session_settings),
             ("POST", re.compile(rf"{API}/playlists/{segment}/shuffle"), self._shuffle),
             ("POST", re.compile(rf"{API}/playlists/{segment}/unshuffle"), self._unshuffle),
         ]
@@ -152,7 +153,7 @@ class Routes:
             return Response.error(400, str(exc))
         except NotInCacheError as exc:
             return Response.error(404, str(exc))
-        except OverlaySettingError as exc:
+        except (OverlaySettingError, SettingError) as exc:
             return Response.error(400, str(exc))
         except (CacheError, OSError) as exc:
             return Response.error(500, f"could not read or write the cache: {exc}")
@@ -276,6 +277,10 @@ class Routes:
 
     def _session_get(self) -> Response:
         return Response.json(self._session.document())
+
+    def _session_settings(self, body: dict[str, Any]) -> Response:
+        """Change playback settings from ``{setting: value}``."""
+        return Response.json(self._session.set_settings(body))
 
     def _shuffle(self, playlist_id: str, _body: dict[str, Any]) -> Response:
         """Put a playlist in a new random order, which it keeps."""

@@ -199,6 +199,7 @@ def test_shuffle_refuses_what_it_cannot_shuffle(routes, store):
 def test_the_session_document_says_what_would_be_resumed(routes, player):
     assert get(routes, "/session")[1] == {
         "playlist_id": None, "track_id": None, "position_s": 0.0, "volume": None,
+        "settings": {"fade_in_s": 0.0},
     }  # fmt: skip
     post(routes, "/player/load", {"playlist_id": PLAYLIST_ID})
     assert get(routes, "/session")[1]["playlist_id"] == PLAYLIST_ID
@@ -518,3 +519,15 @@ def test_an_offset_is_kept_per_track_and_comes_back_after_a_restart(store, playe
     _, track = get(second, "/tracks/TRK0001")
     assert track["offset_ms"] == 250
     assert second.dispatch("GET", API + "/tracks/TRK0001/lyrics").status == 200
+
+
+def test_playback_settings_are_changed_through_the_api_and_checked(routes, store):
+    response, body = post(routes, "/session/settings", {"fade_in_s": 3})
+    assert response.status == 200 and body["settings"] == {"fade_in_s": 3.0}
+    assert get(routes, "/session")[1]["settings"] == {"fade_in_s": 3.0}
+    assert json.loads(store.session_json.read_text())["settings"] == {"fade_in_s": 3.0}
+    for bad in ({"fade_in_s": 31}, {"fade_in_s": "3"}, {"cache_dir": "/tmp"}):
+        response, answer = post(routes, "/session/settings", bad)
+        assert response.status == 400 and "error" in answer
+    assert get(routes, "/session")[1]["settings"] == {"fade_in_s": 3.0}
+    assert routes.dispatch("GET", API + "/session/settings").status == 405

@@ -132,6 +132,11 @@ it is on Spotify. Tracks a later sync adds go to the end of a kept order.
 puts them back when it starts: the same song at the same place, at the same volume, paused.
 It does not begin playing by itself. A song saved at its very end starts from the beginning.
 
+**Fade in** (under **Settings** on the page) makes the first sound after the daemon starts
+come up from silence over the number of seconds you set, so a restart is never a loud
+surprise; 0, the default, turns it off. Your volume is not changed while it fades. It
+needs mpv 0.37 or newer; with an older mpv playback simply starts at full level.
+
 `ctl` exists so a desktop shortcut can pause from inside a fullscreen application. With
 `PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN` set to the plugin's path (Debian:
 `/usr/lib/mpv-mpris/mpris.so`), the keyboard's media keys work too.
@@ -158,7 +163,7 @@ running. It is a client of the daemon's API and nothing more.
 
 ### Positioning and styling it
 
-Open the page and press **Overlay**. The panel changes a running overlay as you move
+Open the page and press **Settings**. The Overlay section changes a running overlay as you move
 the controls: the edge, corner or `center` it is anchored to, the two margins, the
 monitor, font, size, colours, a second (next) line, how early a line appears and the
 fade. **Show a sample line** puts a stand-in line on screen so you can do this with

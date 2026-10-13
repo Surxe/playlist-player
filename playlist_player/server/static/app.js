@@ -4,7 +4,7 @@
 
 import { currentIndex, formatTime, lineProgress, positionAt } from "./clock.js";
 import { initOverlayPanel } from "./overlay.js";
-import { initSettingsPane } from "./settings.js";
+import { initPlaybackSettings, initSettingsPane } from "./settings.js";
 
 const API = "/api/v1";
 // Show a line slightly before its timestamp; it reads better than exactly on it.
@@ -66,7 +66,7 @@ async function postJson(path, body = {}) {
 }
 
 const overlayPanel = initOverlayPanel({ getJson, postJson });
-initSettingsPane([overlayPanel]);
+initSettingsPane([initPlaybackSettings({ getJson, postJson }), overlayPanel]);
 
 function element(tag, className, text) {
   const node = document.createElement(tag);

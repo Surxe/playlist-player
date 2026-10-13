@@ -15,6 +15,10 @@ kept order at the saved track and position. It is loaded paused: audio does not 
 its own at boot. A song whose saved position is at its very end starts again from the
 beginning.
 
+Settings. The few settings of playback itself that are set from the page are kept here
+too. There is one: how long the first sound after a start takes to come up from silence
+(``fade_in_s``; 0, the default, is no fade). It is applied when the daemon starts.
+
 Nothing is written before the daemon has tried to resume. Until then the player is only
 reporting what it started with, and that must not overwrite what was saved.
 """
@@ -40,6 +44,11 @@ from .library import Library
 _END_MARGIN_S = 1.0
 # A shuffle that happens to repeat the order in force is drawn again, this many times.
 _REDRAWS = 8
+MAX_FADE_IN_S = 30.0
+
+
+class SettingError(ValueError):
+    """A value a playback setting cannot take. The message says what it must be."""
 
 
 def _number(value: Any) -> float | None:
@@ -87,6 +96,8 @@ class PlaybackSession:
         stored["orders"] = orders if isinstance(orders, dict) else {}
         for retired in ("shuffle", "order", "order_playlist_id"):
             stored.pop(retired, None)  # written by a version that had shuffle as a switch
+        settings = stored.get("settings")
+        stored["settings"] = settings if isinstance(settings, dict) else {}
         return stored
 
     def _save(self) -> None:
@@ -104,7 +115,33 @@ class PlaybackSession:
                 "track_id": self._data.get("track_id"),
                 "position_s": _number(self._data.get("position_s")) or 0.0,
                 "volume": _number(self._data.get("volume")),
+                "settings": {"fade_in_s": self._fade_in_s()},
             }
+
+    # ------------------------------- settings ------------------------------- #
+
+    def _fade_in_s(self) -> float:
+        """The fade-in length in force. A stored value that is not usable counts as off."""
+        value = _number(self._data["settings"].get("fade_in_s"))
+        return value if value is not None and 0 <= value <= MAX_FADE_IN_S else 0.0
+
+    def set_settings(self, changes: dict[str, Any]) -> dict[str, Any]:
+        """Change playback settings. All of ``changes`` applies, or none of it does."""
+        accepted = {}
+        for key, value in changes.items():
+            if key != "fade_in_s":
+                raise SettingError(f"{key!r} is not a playback setting")
+            seconds = _number(value)
+            if seconds is None or not 0 <= seconds <= MAX_FADE_IN_S:
+                raise SettingError(
+                    f"fade_in_s must be a number of seconds from 0 to {MAX_FADE_IN_S:g}; "
+                    f"got {value!r}"
+                )
+            accepted[key] = round(seconds, 2)
+        with self._lock:
+            self._data["settings"].update(accepted)
+            self._save()
+        return self.document()
 
     # --------------------------------- order -------------------------------- #
 
@@ -244,7 +281,14 @@ class PlaybackSession:
             except (NotInCacheError, CacheError, PlaybackError) as exc:
                 print(f"playlist_player: not resuming the last song: {exc}", file=sys.stderr)
         with self._lock:
+            fade_in_s = self._fade_in_s()
             self._saving = True
+        if fade_in_s > 0:
+            # Armed now, with nothing playing: whatever is started first comes up gently.
+            try:
+                self._player.fade_in(fade_in_s)
+            except PlaybackError as exc:
+                print(f"playlist_player: no fade-in this time: {exc}", file=sys.stderr)
 
     def _resume_position(self, saved: dict[str, Any], track_id: str) -> float | None:
         position = _number(saved.get("position_s"))

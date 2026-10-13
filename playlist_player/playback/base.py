@@ -56,6 +56,14 @@ class Player(Protocol):
         """0 to 100."""
         ...
 
+    def fade_in(self, seconds: float) -> None:
+        """Bring the sound up from silence over ``seconds`` the next time playback starts.
+
+        The volume itself is not touched: it stays what the listener set it to, and
+        reads that way throughout. Where the player cannot do this, nothing happens.
+        """
+        ...
+
     def set_offset(self, track_id: str, offset_ms: int) -> None:
         """Tell the player a track's lyric offset changed, so the next snapshot carries it."""
         ...

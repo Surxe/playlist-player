@@ -14,7 +14,7 @@ from playlist_player.errors import NotInCacheError
 from playlist_player.models import PlaybackState, PlayerStatus
 from playlist_player.server.app import Daemon
 from playlist_player.server.library import Library
-from playlist_player.server.session import PlaybackSession
+from playlist_player.server.session import PlaybackSession, SettingError
 from tests.support.library import PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer
 
@@ -163,7 +163,9 @@ def test_a_file_from_the_version_with_a_shuffle_switch_is_read_without_its_old_k
     })  # fmt: skip
     session, _ = session_on(store, library)
     assert ids(session.queue_for(PLAYLIST_ID)) == PLAYABLE
-    assert set(saved(store)) == {"playlist_id", "track_id", "position_s", "volume", "orders"}
+    assert set(saved(store)) == {
+        "playlist_id", "track_id", "position_s", "volume", "orders", "settings",
+    }  # fmt: skip
 
 
 # ------------------------------- recording ------------------------------ #
@@ -332,3 +334,70 @@ def test_saving_and_shuffling_from_several_threads_leave_a_whole_file(store, lib
     document = saved(store)
     assert 0 <= document["volume"] <= 100
     assert document["orders"][PLAYLIST_ID] == ids(player.queue)  # file and queue agree
+
+
+# -------------------------------- settings ------------------------------ #
+
+
+def test_the_fade_in_is_off_until_it_is_set_and_then_it_is_kept(store, library):
+    session, _ = session_on(store, library)
+    assert session.document()["settings"] == {"fade_in_s": 0.0}
+    assert session.set_settings({"fade_in_s": 3.5})["settings"] == {"fade_in_s": 3.5}
+    assert saved(store)["settings"] == {"fade_in_s": 3.5}
+    assert session_on(store, library)[0].document()["settings"] == {"fade_in_s": 3.5}
+    assert session.set_settings({"fade_in_s": 0})["settings"] == {"fade_in_s": 0.0}
+
+
+@pytest.mark.parametrize(
+    ("changes", "says"),
+    [
+        ({"fade_in_s": -1}, "from 0 to 30"),
+        ({"fade_in_s": 30.5}, "from 0 to 30"),
+        ({"fade_in_s": "3"}, "must be a number"),
+        ({"fade_in_s": True}, "must be a number"),
+        ({"fade_in_s": None}, "must be a number"),
+        ({"volume": 5}, "'volume' is not a playback setting"),
+        ({"fade_in_s": 2, "nonsense": 1}, "not a playback setting"),
+    ],
+)
+def test_a_setting_that_cannot_be_taken_changes_nothing(store, library, changes, says):
+    session, _ = session_on(store, library)
+    session.set_settings({"fade_in_s": 4})
+    with pytest.raises(SettingError, match=says):
+        session.set_settings(changes)
+    assert session.document()["settings"] == {"fade_in_s": 4.0}
+
+
+def test_a_start_arms_the_fade_in_after_the_song_is_loaded_and_only_when_it_is_on(store, library):
+    store.write_json(store.session_json, {
+        "playlist_id": PLAYLIST_ID, "track_id": "TRK0001", "position_s": 2.5, "volume": 45.0,
+        "settings": {"fade_in_s": 4},
+    })  # fmt: skip
+    session, player = session_on(store, library)
+    session.resume()
+    kinds = [call[0] for call in player.calls]
+    assert kinds == ["set_volume", "load_queue", "fade_in"]  # the volume itself is not lowered
+    assert player.calls[-1] == ("fade_in", 4.0)
+    assert saved(store)["volume"] == 45.0
+
+    off, quiet = session_on(store, library)
+    off.set_settings({"fade_in_s": 0})
+    off.resume()
+    assert not any(call[0] == "fade_in" for call in quiet.calls)
+
+
+def test_the_fade_in_is_armed_even_with_no_song_to_resume(store, library):
+    """Whatever is played first after a start is what comes up gently."""
+    store.write_json(store.session_json, {"settings": {"fade_in_s": 2}})
+    session, player = session_on(store, library)
+    session.resume()
+    assert player.calls == [("fade_in", 2.0)]
+
+
+def test_a_stored_fade_in_that_makes_no_sense_counts_as_off(store, library):
+    for stored in ({"fade_in_s": "long"}, {"fade_in_s": 999}, {"fade_in_s": -3}, "nonsense"):
+        store.write_json(store.session_json, {"settings": stored})
+        session, player = session_on(store, library)
+        session.resume()
+        assert session.document()["settings"] == {"fade_in_s": 0.0}
+        assert player.calls == []

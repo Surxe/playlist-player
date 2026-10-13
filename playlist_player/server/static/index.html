@@ -46,6 +46,27 @@
     </div>
     <p class="muted">Changes are saved automatically.</p>
 
+    <section id="playback-settings" aria-label="Playback">
+      <div class="pane-head">
+        <h3>Playback</h3>
+      </div>
+      <div class="settings-form">
+        <div class="row">
+          <label for="fade-in">Fade in</label>
+          <span class="controls">
+            <input type="range" id="fade-in-slider" min="0" max="10" step="0.5" aria-label="Fade in">
+            <input type="number" id="fade-in" min="0" max="30" step="0.5">
+          </span>
+          <span class="unit muted">s</span>
+          <span></span>
+        </div>
+      </div>
+      <p class="muted">After the daemon starts, the first sound comes up from silence over
+        this long, so a restart is never a loud surprise. 0 turns it off. A change applies
+        from the next start.</p>
+      <p id="playback-note" class="muted" role="status"></p>
+    </section>
+
     <section id="overlay-settings" aria-label="Overlay">
       <div class="pane-head">
         <h3>Overlay</h3>
