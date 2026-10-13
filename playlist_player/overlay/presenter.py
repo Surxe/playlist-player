@@ -11,6 +11,11 @@ The overlay is visible only when ALL of these hold:
 * the track has synced lyrics, and the lines held are for that track;
 * the current line exists and has text (nothing before the first line or during a gap).
 
+The one exception is a *preview*: while the daemon asks for one, a sample line is shown
+whatever is or is not playing, so the overlay can be positioned from the remote-control
+page. A preview still needs the connection, and ends by itself at the instant the daemon
+named.
+
 In every other case the view is hidden, and the renderer unmaps the surface rather than
 drawing something transparent, so the compositor can go back to presenting the
 fullscreen application directly.
@@ -39,6 +44,14 @@ class OverlayView:
 
 HIDDEN = OverlayView(visible=False)
 
+SAMPLE_TEXT = "This is where the current lyric line will appear"
+SAMPLE_NEXT = "and this is the line that follows it"
+
+
+def sample_view(*, show_next: bool = False, ticking: bool = False) -> OverlayView:
+    """The stand-in line shown by ``--demo`` and by a preview."""
+    return OverlayView(True, SAMPLE_TEXT, SAMPLE_NEXT if show_next else "", ticking)
+
 
 def present(
     *,
@@ -50,9 +63,14 @@ def present(
     now_ms: int,
     lead_ms: int = 0,
     show_next: bool = False,
+    preview_until_ms: int = 0,
 ) -> OverlayView:
     """The view for this instant. ``times`` are the timestamps of ``lines``."""
-    if not connected or state is None:
+    if not connected:
+        return HIDDEN
+    if now_ms < preview_until_ms:
+        return sample_view(show_next=show_next, ticking=True)  # ticking: it ends on time
+    if state is None:
         return HIDDEN
     if state.status is not PlayerStatus.PLAYING or state.paused:
         return HIDDEN
@@ -87,12 +105,25 @@ class OverlayModel:
         self._lyrics_track_id: str | None = None
         self._lines: tuple[LyricLine, ...] = ()
         self._times: list[int] = []
+        self._preview_until_ms = 0
+
+    def configure(self, *, lead_ms: int, show_next: bool) -> None:
+        """Change how lines are timed and whether the following line is shown."""
+        with self._lock:
+            self._lead_ms = lead_ms
+            self._show_next = show_next
+
+    def set_preview_until(self, epoch_ms: int) -> None:
+        """Show the sample line until ``epoch_ms``; 0 (or any past instant) ends it."""
+        with self._lock:
+            self._preview_until_ms = epoch_ms
 
     def set_connected(self, connected: bool) -> None:
         with self._lock:
             self._connected = connected
             if not connected:
                 self._state = None  # whatever we knew is no longer known to be true
+                self._preview_until_ms = 0
 
     def set_state(self, state: PlaybackState) -> None:
         with self._lock:
@@ -125,4 +156,5 @@ class OverlayModel:
                 now_ms=now_ms,
                 lead_ms=self._lead_ms,
                 show_next=self._show_next,
+                preview_until_ms=self._preview_until_ms,
             )

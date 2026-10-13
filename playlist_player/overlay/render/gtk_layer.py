@@ -14,6 +14,7 @@ window that the compositor treats like any other.
 
 from __future__ import annotations
 
+import ctypes
 import signal
 import sys
 from pathlib import Path
@@ -65,32 +66,38 @@ class GtkLayerRenderer:
             )
         self._placement = placement
         self._style = style
+        self._monitor_name = monitor
+        self._css = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), self._css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
         self._loop = GLib.MainLoop()
         self._view_source: ViewSource | None = None
         self._shown = OverlayView(visible=False)
         self._tick_id = 0
         self._fade_id = 0
 
-        self._install_css()
-        self._line = self._label("line", 1.0)
-        self._next = self._label("next", _NEXT_LINE_SCALE)
+        self._line = self._label("line")
+        self._next = self._label("next")
         self._next.set_opacity(_NEXT_LINE_OPACITY)
         self._next.set_visible(False)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        box.append(self._line)
-        box.append(self._next)
-        self._apply_shift(box)
+        self._box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self._box.append(self._line)
+        self._box.append(self._next)
 
         self._window = Gtk.Window()
         self._window.add_css_class("playlist-player-overlay")
         self._window.set_decorated(False)
-        self._window.set_child(box)
+        self._window.set_child(self._box)
         self._window.connect("map", self._on_map)
-        self._init_layer(monitor)
+        self._init_layer()
+        self._apply_style()
+        self._apply_placement()
 
     # -------------------------------- set-up -------------------------------- #
 
-    def _install_css(self) -> None:
+    def _apply_style(self) -> None:
+        """Colours, font and width limit, from ``self._style``. Repeatable."""
         style = self._style
         o = style.outline_color
         css = (
@@ -100,13 +107,12 @@ class GtkLayerRenderer:
             f"text-shadow: -2px -2px 0 {o}, 2px -2px 0 {o}, -2px 2px 0 {o}, 2px 2px 0 {o}, "
             f"0 -2px 0 {o}, 0 2px 0 {o}, -2px 0 0 {o}, 2px 0 0 {o}, 0 0 6px {o}; }}\n"
         )
-        provider = Gtk.CssProvider()
-        provider.load_from_string(css)
-        Gtk.StyleContext.add_provider_for_display(
-            Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
+        self._css.load_from_string(css)
+        self._set_font(self._line, 1.0)
+        self._set_font(self._next, _NEXT_LINE_SCALE)
 
-    def _label(self, css_class: str, scale: float) -> Gtk.Label:
+    @staticmethod
+    def _label(css_class: str) -> Gtk.Label:
         label = Gtk.Label()
         label.add_css_class(css_class)
         label.set_wrap(True)
@@ -115,6 +121,11 @@ class GtkLayerRenderer:
         # into three. A line should stay on one row until it reaches the width limit.
         label.set_natural_wrap_mode(Gtk.NaturalWrapMode.NONE)
         label.set_justify(Gtk.Justification.CENTER)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(label, f"set_margin_{side}")(_PADDING_PX)
+        return label
+
+    def _set_font(self, label: Gtk.Label, scale: float) -> None:
         description = Pango.FontDescription.from_string(self._style.font)
         description.set_size(int(self._style.font_size * scale * Pango.SCALE))
         attributes = Pango.AttrList()
@@ -127,24 +138,8 @@ class GtkLayerRenderer:
         metrics = label.get_pango_context().get_metrics(None, None)
         unit = max(metrics.get_approximate_char_width(), metrics.get_approximate_digit_width())
         label.set_max_width_chars(max(1, round(self._style.max_width * Pango.SCALE / max(1, unit))))
-        for side in ("top", "bottom", "start", "end"):
-            getattr(label, f"set_margin_{side}")(_PADDING_PX)
-        return label
 
-    def _apply_shift(self, box: Gtk.Box) -> None:
-        # On an axis the surface is centred on, pad one side by twice the shift: the
-        # surface grows and its centre stays put, so the text moves by the shift.
-        x, y = self._placement.shift_x, self._placement.shift_y
-        if x > 0:
-            box.set_margin_start(2 * x)
-        elif x < 0:
-            box.set_margin_end(-2 * x)
-        if y > 0:
-            box.set_margin_top(2 * y)
-        elif y < 0:
-            box.set_margin_bottom(-2 * y)
-
-    def _init_layer(self, monitor: str) -> None:
+    def _init_layer(self) -> None:
         window = self._window
         LayerShell.init_for_window(window)
         LayerShell.set_namespace(window, NAMESPACE)
@@ -153,20 +148,49 @@ class GtkLayerRenderer:
         # -1: reserve nothing AND ignore the space panels reserve, so margins are measured
         # from the real screen edge whether or not a panel is showing.
         LayerShell.set_exclusive_zone(window, -1)
+
+    def _apply_placement(self) -> None:
+        """Edges, margins, shift and monitor, from ``self._placement``. Repeatable."""
+        window = self._window
         for name, edge in _EDGES.items():
             LayerShell.set_anchor(window, edge, name in self._placement.edges)
             LayerShell.set_margin(window, edge, self._placement.margins.get(name, 0))
-        if monitor:
-            found = self._monitor(monitor)
-            if found is None:
-                names = ", ".join(self.monitor_names()) or "none"
-                print(
-                    f"playlist_player: no monitor named {monitor!r} (found: {names}); "
-                    "leaving the choice to the compositor",
-                    file=sys.stderr,
-                )
-            else:
-                LayerShell.set_monitor(window, found)
+        # On an axis the surface is centred on, pad one side by twice the shift: the
+        # surface grows and its centre stays put, so the text moves by the shift.
+        x, y = self._placement.shift_x, self._placement.shift_y
+        self._box.set_margin_start(2 * x if x > 0 else 0)
+        self._box.set_margin_end(-2 * x if x < 0 else 0)
+        self._box.set_margin_top(2 * y if y > 0 else 0)
+        self._box.set_margin_bottom(-2 * y if y < 0 else 0)
+
+        found = self._monitor(self._monitor_name) if self._monitor_name else None
+        if self._monitor_name and found is None:
+            names = ", ".join(self.monitor_names()) or "none"
+            print(
+                f"playlist_player: no monitor named {self._monitor_name!r} (found: {names}); "
+                "leaving the choice to the compositor",
+                file=sys.stderr,
+            )
+        if found is not None and found != LayerShell.get_monitor(window):
+            LayerShell.set_monitor(window, found)
+        elif found is None and LayerShell.get_monitor(window) is not None:
+            self._clear_monitor()
+
+    def _clear_monitor(self) -> None:
+        """Hand the choice of monitor back to the compositor.
+
+        The library takes NULL for that, but its Python binding refuses ``None``, so the
+        C function is called directly. If that cannot be done the overlay simply stays
+        on the monitor it is on, which is one of the choices the compositor could make.
+        """
+        try:
+            library = ctypes.CDLL("libgtk4-layer-shell.so.0")
+            library.gtk_layer_set_monitor.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            library.gtk_layer_set_monitor.restype = None
+            # hash() of a PyGObject wrapper is the address of the object it wraps.
+            library.gtk_layer_set_monitor(hash(self._window), None)
+        except (OSError, AttributeError) as exc:
+            print(f"playlist_player: could not release the monitor: {exc}", file=sys.stderr)
 
     @staticmethod
     def monitor_names() -> list[str]:
@@ -205,6 +229,39 @@ class GtkLayerRenderer:
     def stop(self) -> None:
         GLib.idle_add(self._quit)
 
+    def reconfigure(self, placement: Placement, style: Style, monitor: str) -> None:
+        GLib.idle_add(self._reconfigure, placement, style, monitor)
+
+    def _reconfigure(self, placement: Placement, style: Style, monitor: str) -> bool:
+        # On the main loop's thread, like everything else that touches a widget.
+        if style != self._style:
+            self._style = style
+            self._apply_style()
+        if placement != self._placement or monitor != self._monitor_name:
+            self._placement = placement
+            self._monitor_name = monitor
+            self._apply_placement()
+        self._refit()
+        return GLib.SOURCE_REMOVE
+
+    def _refit(self) -> None:
+        """Make the window take the natural size of what it now holds.
+
+        A mapped window keeps its size when only its content's natural size changes (a
+        smaller font, a removed shift), leaving the text adrift inside a surface that is
+        too large. Naming the natural size as the default makes GTK resize to it.
+
+        The default size must then go back to (0, 0). That is the value the layer-shell
+        library gives the window and the only one it works with: left at anything else
+        (GTK's own "unset" of -1 included), the window resizes once and is then
+        destroyed by the library the next time it is hidden and shown.
+        """
+        child = self._window.get_child()
+        width = child.measure(Gtk.Orientation.HORIZONTAL, -1).natural
+        height = child.measure(Gtk.Orientation.VERTICAL, width).natural
+        self._window.set_default_size(width, height)
+        self._window.set_default_size(0, 0)
+
     def _quit(self) -> bool:
         self._loop.quit()
         return GLib.SOURCE_REMOVE
@@ -240,6 +297,8 @@ class GtkLayerRenderer:
         self._next.set_visible(bool(view.next_text))
         if not previous.visible or previous.text != view.text:
             self._fade_in()
+        if previous.visible:
+            self._refit()  # changed in place: a window just being shown sizes itself
         self._window.set_visible(True)
 
     def _fade_in(self) -> None:

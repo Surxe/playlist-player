@@ -16,31 +16,35 @@ except OSError:  # not installed; reported properly when the renderer is built
     _LAYER_SHELL_LOADED = False
 
 from pathlib import Path  # noqa: E402
+from typing import Any  # noqa: E402
 
 from ..config import Settings  # noqa: E402
 from ..errors import PlaylistPlayerError  # noqa: E402
+from ..overlay_settings import OverlaySettings, salvage  # noqa: E402
 from .client import DaemonClient  # noqa: E402
 from .clock import now_epoch_ms  # noqa: E402
-from .presenter import OverlayModel, OverlayView  # noqa: E402
+from .presenter import OverlayModel, OverlayView, sample_view  # noqa: E402
 from .render.base import Placement, Renderer, Style  # noqa: E402
 
-DEMO_TEXT = "This is where the current lyric line will appear"
-DEMO_NEXT = "and this is the line that follows it"
+
+def placement_and_style(values: OverlaySettings) -> tuple[Placement, Style]:
+    """What a renderer needs to draw with these values."""
+    placement = Placement.from_settings(values.anchor, values.margin_x, values.margin_y)
+    style = Style(
+        font=values.font,
+        font_size=values.font_size,
+        color=values.color,
+        outline_color=values.outline_color,
+        max_width=values.max_width,
+        fade_ms=values.fade_ms,
+    )
+    return placement, style
 
 
 def build_renderer(settings: Settings) -> Renderer:
     """The renderer for these settings. Fails with one clear line if it cannot work here."""
-    placement = Placement.from_settings(
-        settings.overlay_anchor, settings.overlay_margin_x, settings.overlay_margin_y
-    )
-    style = Style(
-        font=settings.overlay_font,
-        font_size=settings.overlay_font_size,
-        color=settings.overlay_color,
-        outline_color=settings.overlay_outline_color,
-        max_width=settings.overlay_max_width,
-        fade_ms=settings.overlay_fade_ms,
-    )
+    values = OverlaySettings.from_settings(settings)
+    placement, style = placement_and_style(values)
     if not _LAYER_SHELL_LOADED:
         raise PlaylistPlayerError(
             "libgtk4-layer-shell is not installed (Debian: libgtk4-layer-shell0 and "
@@ -50,18 +54,44 @@ def build_renderer(settings: Settings) -> Renderer:
         from .render.gtk_layer import GtkLayerRenderer
     except (ImportError, ValueError) as exc:
         raise PlaylistPlayerError(f"the GTK bindings are not available: {exc}") from exc
-    return GtkLayerRenderer(placement, style, monitor=settings.overlay_monitor)
+    return GtkLayerRenderer(placement, style, monitor=values.monitor)
 
 
 def demo_view(settings: Settings) -> OverlayView:
-    following = DEMO_NEXT if settings.overlay_lines == 2 else ""
-    return OverlayView(visible=True, text=DEMO_TEXT, next_text=following)
+    return sample_view(show_next=settings.overlay_lines == 2)
+
+
+class LiveSettings:
+    """Applies the daemon's overlay settings document to a running overlay.
+
+    The values this overlay was started with are its baseline; the document's overrides
+    go on top, so a change made on the remote-control page takes effect at once and the
+    baseline returns when the override is dropped. An override this version cannot use
+    is skipped rather than fatal: the daemon may be newer than the overlay.
+    """
+
+    def __init__(self, base: OverlaySettings, model: OverlayModel, renderer: Renderer) -> None:
+        self._base = base
+        self._current = base
+        self._model = model
+        self._renderer = renderer
+
+    def apply(self, document: dict[str, Any]) -> None:
+        overrides, _dropped = salvage(document.get("overrides", {}))
+        values = self._base.merged(overrides)
+        if values != self._current:
+            self._current = values
+            self._model.configure(lead_ms=values.lead_ms, show_next=values.lines == 2)
+            self._renderer.reconfigure(*placement_and_style(values), values.monitor)
+        until = document.get("preview_until_ms")
+        self._model.set_preview_until(until if isinstance(until, int) else 0)
 
 
 def connect(settings: Settings, renderer: Renderer) -> tuple[OverlayModel, DaemonClient]:
     """The model and the client that feeds it, set to wake ``renderer`` on every change."""
     model = OverlayModel(lead_ms=settings.overlay_lead_ms, show_next=settings.overlay_lines == 2)
-    client = DaemonClient(settings.base_url, model, on_change=renderer.wake)
+    live = LiveSettings(OverlaySettings.from_settings(settings), model, renderer)
+    client = DaemonClient(settings.base_url, model, on_change=renderer.wake, on_overlay=live.apply)
     return model, client
 
 

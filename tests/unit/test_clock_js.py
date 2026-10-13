@@ -17,9 +17,10 @@ from playlist_player.models import PlaybackState, PlayerStatus
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_clock_js_passes_its_node_tests():
+@pytest.mark.parametrize("name", ["clock", "overlay"])
+def test_the_pages_modules_pass_their_node_tests(name):
     result = subprocess.run(
-        ["node", "--test", "tests/js/clock.test.mjs"],
+        ["node", "--test", f"tests/js/{name}.test.mjs"],
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,

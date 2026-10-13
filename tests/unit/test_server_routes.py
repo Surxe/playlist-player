@@ -7,8 +7,11 @@ import json
 import pytest
 
 from playlist_player.cache import assets
+from playlist_player.config import load_settings
 from playlist_player.errors import PlaybackError
+from playlist_player.overlay_settings import OverlaySettings
 from playlist_player.server.library import Library
+from playlist_player.server.overlay_config import OverlayConfig
 from playlist_player.server.routes import API, Routes
 from playlist_player.server.security import allowed_hosts, check_request
 from tests.support.library import JPEG, PLAYLIST_ID, build_library
@@ -23,7 +26,8 @@ def player():
 @pytest.fixture
 def routes(store, player):
     build_library(store)
-    return Routes(Library(store), player)
+    overlay = OverlayConfig(OverlaySettings.from_settings(load_settings()), store)
+    return Routes(Library(store), player, overlay)
 
 
 def get(routes, path):
@@ -305,7 +309,7 @@ def test_static_files_come_from_an_allowlist(routes):
     assert page.status == 200 and page.content_type.startswith("text/html")
     assert b'src="/static/app.js"' in page.body
     for name, kind in [("app.js", "text/javascript"), ("clock.js", "text/javascript"),
-                       ("style.css", "text/css")]:  # fmt: skip
+                       ("overlay.js", "text/javascript"), ("style.css", "text/css")]:  # fmt: skip
         response = routes.dispatch("GET", f"/static/{name}")
         assert response.status == 200 and response.content_type.startswith(kind)
     assert routes.dispatch("GET", "/static/index.html").status == 404
@@ -362,3 +366,74 @@ def test_allowed_hosts():
 def test_check_request(method, headers, status):
     refusal = check_request(method, headers, HOSTS)
     assert (refusal[0] if refusal else None) == status
+
+
+# ----------------------------- overlay settings ----------------------------- #
+
+
+def test_overlay_settings_are_described_with_their_rules(routes):
+    response, body = get(routes, "/overlay")
+    assert response.status == 200
+    assert body["settings"]["margin_y"] == 120 and body["overrides"] == {}
+    assert body["rules"]["anchor"]["choices"][0] == "top"
+    assert body["rules"]["font_size"] == {"kind": "int", "min": 4, "max": 300}
+    assert body["rules"]["color"] == {"kind": "color"}
+
+
+def test_overlay_settings_can_be_changed_dropped_and_reset(routes, store):
+    response, body = post(routes, "/overlay", {"margin_y": 300, "anchor": "top-left"})
+    assert response.status == 200
+    assert body["overrides"] == {"margin_y": 300, "anchor": "top-left"}
+    assert json.loads(store.overlay_json.read_text())["overrides"] == body["overrides"]
+
+    _, body = post(routes, "/overlay", {"anchor": None})
+    assert body["overrides"] == {"margin_y": 300}
+    _, body = post(routes, "/overlay/reset")
+    assert body["overrides"] == {} and body["settings"]["margin_y"] == 120
+
+
+@pytest.mark.parametrize(
+    ("body", "says"),
+    [
+        ({"margin_y": "300"}, "margin_y must be a whole number"),
+        ({"margin_y": 300.5}, "margin_y must be a whole number"),
+        ({"font": "Sans; rm -rf ~"}, "font must be a font name"),
+        ({"color": "red; } body { display: none"}, "color must be a colour"),
+        ({"monitor": "../../etc"}, "monitor must be an output connector"),
+        ({"cache_dir": "/tmp"}, "'cache_dir' is not an overlay setting"),
+        ({"margin_y": 300, "lines": 9}, "lines must be"),
+    ],
+)
+def test_overlay_values_are_checked_and_a_refused_change_changes_nothing(routes, store, body, says):
+    response, answer = post(routes, "/overlay", body)
+    assert response.status == 400 and says in answer["error"]
+    assert get(routes, "/overlay")[1]["overrides"] == {}
+    assert not store.overlay_json.exists()
+
+
+def test_overlay_preview_takes_a_bounded_number_of_seconds(routes):
+    response, body = post(routes, "/overlay/preview", {"seconds": 8})
+    assert response.status == 200 and body["preview_until_ms"] > 0
+    assert post(routes, "/overlay/preview", {"seconds": 0})[1]["preview_until_ms"] == 0
+    for bad in ({"seconds": -1}, {"seconds": 61}, {"seconds": "8"}, {"seconds": True}, {}):
+        assert post(routes, "/overlay/preview", bad)[0].status == 400
+
+
+def test_overlay_endpoints_refuse_other_methods_and_report_a_failed_save(
+    routes, store, monkeypatch
+):
+    assert routes.dispatch("GET", API + "/overlay/reset").status == 405
+    assert routes.dispatch("DELETE", API + "/overlay").status == 405
+
+    def refuse(path, data):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(store, "write_json", refuse)
+    response, answer = post(routes, "/overlay", {"margin_y": 300})
+    assert response.status == 500 and "read-only file system" in answer["error"]
+    assert get(routes, "/overlay")[1]["overrides"] == {}
+
+
+def test_without_an_overlay_store_the_endpoints_do_not_exist(store, player):
+    bare = Routes(Library(store), player)
+    assert bare.dispatch("GET", API + "/overlay").status == 404

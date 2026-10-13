@@ -2,7 +2,8 @@
 
 A renderer owns the main loop. It asks ``view_source`` what to show: whenever
 :meth:`Renderer.wake` is called (from any thread), and on a short timer while the view
-says it is ``ticking``. It decides nothing about content.
+says it is ``ticking``. It decides nothing about content. Where and how it draws can be
+changed while it runs, with :meth:`Renderer.reconfigure`.
 
 ``Placement`` and ``Style`` turn the settings into what a renderer needs, here rather
 than in a renderer so the rules are tested without a display.
@@ -100,6 +101,10 @@ class Renderer(Protocol):
 
     def wake(self) -> None:
         """Something changed; ask ``view_source`` again now. Safe from any thread."""
+        ...
+
+    def reconfigure(self, placement: Placement, style: Style, monitor: str) -> None:
+        """Move and restyle the overlay without restarting it. Safe from any thread."""
         ...
 
     def stop(self) -> None:

@@ -23,11 +23,13 @@
 # Settings (environment, optional):
 #   PLAYLIST_PLAYER_TEST_WAYLAND   socket name, default wl-pp-test
 #   PLAYLIST_PLAYER_TEST_SIZE      virtual screen as WIDTHxHEIGHT, default 1920x1080
+#   PLAYLIST_PLAYER_TEST_OUTPUTS   number of virtual screens, side by side, default 1
 set -euo pipefail
 
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 SOCKET="${PLAYLIST_PLAYER_TEST_WAYLAND:-wl-pp-test}"
 SIZE="${PLAYLIST_PLAYER_TEST_SIZE:-1920x1080}"
+OUTPUTS="${PLAYLIST_PLAYER_TEST_OUTPUTS:-1}"
 STATE_DIR="$XDG_RUNTIME_DIR/playlist-player-test"
 PID_FILE="$STATE_DIR/$SOCKET.pid"
 BUS_FILE="$STATE_DIR/$SOCKET.bus"
@@ -61,8 +63,8 @@ start() {
         printf "%s\n" "$DBUS_SESSION_BUS_ADDRESS" >"$1"
         printf "%s\n" "$$" >"$2"
         exec kwin_wayland --virtual --no-lockscreen --no-global-shortcuts \
-            --width "$3" --height "$4" --socket "$5"
-    ' sh "$BUS_FILE" "$PID_FILE" "${SIZE%x*}" "${SIZE#*x}" "$SOCKET" >"$LOG_FILE" 2>&1 &
+            --width "$3" --height "$4" --socket "$5" --output-count "$6"
+    ' sh "$BUS_FILE" "$PID_FILE" "${SIZE%x*}" "${SIZE#*x}" "$SOCKET" "$OUTPUTS" >"$LOG_FILE" 2>&1 &
 
     for _ in $(seq 100); do
         if is_running; then

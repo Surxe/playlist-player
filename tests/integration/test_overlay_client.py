@@ -47,10 +47,12 @@ class Harness:
         self.model = OverlayModel(lead_ms=0)
         self.woken = 0
         self.fetched: list[str] = []
+        self.documents: list[dict] = []
         self.client = DaemonClient(
             f"http://127.0.0.1:{self.port}",
             self.model,
             on_change=self._wake,
+            on_overlay=self.documents.append,
             reconnect_s=(0.05, 0.2),
         )
         original = self.client.fetch_lines
@@ -181,3 +183,81 @@ def test_a_failed_lyrics_fetch_is_an_empty_answer_not_an_error(harness):
     assert harness.client.fetch_lines("../bad") == ()
     harness.stop_daemon()
     assert harness.client.fetch_lines("TRK0000") == ()
+
+
+def test_the_overlay_settings_arrive_on_connecting_and_on_every_change(harness):
+    harness.start_daemon()
+    harness.daemon.overlay.update({"margin_y": 300})
+    harness.client.start()
+    wait_until(lambda: harness.documents)
+    assert harness.documents[0]["overrides"] == {"margin_y": 300}
+    # The daemon can tell an overlay from a browser, and says so in the document.
+    wait_until(lambda: harness.documents[-1]["clients"] == 1)
+
+    woken = harness.woken
+    harness.daemon.overlay.update({"anchor": "top"})
+    wait_until(lambda: harness.documents[-1]["overrides"] == {"margin_y": 300, "anchor": "top"})
+    assert harness.woken > woken  # the renderer is told to look again
+
+    harness.play()  # playback events and settings events share the stream
+    wait_until(lambda: harness.text_in(1.2) == "an invented first line")
+    harness.daemon.overlay.preview(5)
+    wait_until(lambda: harness.documents[-1]["preview_until_ms"] > 0)
+    versions = [document["version"] for document in harness.documents]
+    assert versions == sorted(set(versions))
+
+
+def test_a_restarted_daemon_sends_its_settings_again_and_forgets_the_overlay_it_lost(harness):
+    harness.start_daemon()
+    harness.client.start()
+    wait_until(lambda: harness.documents and harness.documents[-1]["clients"] == 1)
+    daemon = harness.daemon
+    harness.client.stop()
+    wait_until(lambda: daemon.overlay.snapshot()["clients"] == 0)
+
+    harness.stop_daemon()
+    harness.documents.clear()
+    harness.client = DaemonClient(
+        f"http://127.0.0.1:{harness.port}", harness.model, on_change=harness._wake,
+        on_overlay=harness.documents.append, reconnect_s=(0.05, 0.2),
+    )  # fmt: skip
+    harness.start_daemon()  # versions start again from 1; they must not look stale
+    harness.client.start()
+    wait_until(lambda: harness.documents and harness.documents[-1]["clients"] == 1)
+
+
+def test_a_client_without_a_settings_handler_still_follows_playback(harness):
+    client = DaemonClient(
+        f"http://127.0.0.1:{harness.port}", harness.model, on_change=harness._wake,
+        reconnect_s=(0.05, 0.2),
+    )  # fmt: skip
+    harness.start_daemon()
+    client.start()
+    try:
+        wait_until(lambda: harness.daemon.open_streams == 1)
+        harness.daemon.overlay.update({"lines": 2})
+        harness.play()
+        wait_until(lambda: harness.text_in(1.2) == "an invented first line")
+    finally:
+        client.stop()
+
+
+def test_settings_that_cannot_be_applied_do_not_stop_the_lyrics(harness, capsys):
+    def explode(document):
+        raise RuntimeError("could not apply")
+
+    client = DaemonClient(
+        f"http://127.0.0.1:{harness.port}", harness.model, on_change=harness._wake,
+        on_overlay=explode, reconnect_s=(0.05, 0.2),
+    )  # fmt: skip
+    harness.start_daemon()
+    client.start()
+    try:
+        wait_until(lambda: harness.daemon.open_streams == 1)
+        harness.daemon.overlay.update({"lines": 2})
+        harness.play()
+        wait_until(lambda: harness.text_in(1.2) == "an invented first line")
+        assert client._thread.is_alive()
+        assert "overlay settings: could not apply" in capsys.readouterr().err
+    finally:
+        client.stop()

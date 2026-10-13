@@ -51,8 +51,15 @@ pytestmark = [
 ]
 
 
-def kwin(*args: str, **kwargs) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "XDG_RUNTIME_DIR": str(RUNTIME)}
+# A second compositor with two screens side by side, for moving between monitors.
+TWO_SCREENS = {
+    "PLAYLIST_PLAYER_TEST_WAYLAND": "wl-pp-test-two",
+    "PLAYLIST_PLAYER_TEST_OUTPUTS": "2",
+}
+
+
+def kwin(*args: str, extra_env=None, **kwargs) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, "XDG_RUNTIME_DIR": str(RUNTIME), **(extra_env or {})}
     return subprocess.run(
         ["bash", str(KWIN), *args], capture_output=True, text=True, env=env, timeout=60, **kwargs
     )
@@ -67,6 +74,17 @@ def compositor():
     yield
     if not already:
         kwin("stop")
+
+
+@pytest.fixture(scope="module")
+def two_screens():
+    already = kwin("status", extra_env=TWO_SCREENS).returncode == 0
+    started = kwin("start", extra_env=TWO_SCREENS)
+    if started.returncode != 0:
+        pytest.skip(f"the two-screen compositor did not start: {started.stderr.strip()[-200:]}")
+    yield
+    if not already:
+        kwin("stop", extra_env=TWO_SCREENS)
 
 
 def child_env(tmp_path, **settings: str) -> dict[str, str]:
@@ -263,3 +281,349 @@ def test_the_overlay_follows_playback_on_the_overlay_layer(
     # mapped sample is taken before the first allocation).
     settled = first(lambda s: s["mapped"], base + 1.5)
     assert (width, height) == (settled["width"], settled["height"])
+
+
+def test_settings_changed_through_the_daemon_move_and_restyle_the_running_overlay(
+    compositor, store, tmp_path, monkeypatch
+):
+    """The remote-control page's path: nothing playing, a preview on, settings changing.
+
+    The window must move and resize where it stands. If it were unmapped and mapped
+    again for each change it would flicker under the user's hand while they position it.
+    """
+    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+    build_library(store)
+    daemon = Daemon(load_settings(), store, FakePlayer(), port=0, keepalive_s=0.5)
+    threading.Thread(target=daemon.serve_forever, daemon=True).start()
+
+    out = tmp_path / "probe.json"
+    probe = subprocess.Popen(
+        ["bash", str(KWIN), "run", sys.executable, str(PROBE), str(out), "10"],
+        cwd=tmp_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        env=child_env(
+            tmp_path, PORT=str(daemon.port), OVERLAY_ANCHOR="bottom-right",
+            OVERLAY_MARGIN_X="40", OVERLAY_MARGIN_Y="90", OVERLAY_MONITOR="Virtual-0",
+            OVERLAY_FADE_MS="0",
+        ),
+    )  # fmt: skip
+    marks: dict[str, float] = {}
+    stacks: dict[str, list[dict]] = {}
+
+    def step(name: str, change) -> None:
+        marks[name] = time.time()
+        change()
+        time.sleep(0.6)
+        stacks[name] = json.loads(kwin("windows", check=True).stdout)
+
+    try:
+        wait_until(lambda: daemon.overlay.snapshot()["clients"] == 1, timeout=15)
+        time.sleep(0.3)  # idle: samples that must show nothing
+        step("preview", lambda: daemon.overlay.preview(30))
+        step("corner", lambda: daemon.overlay.update(
+            {"anchor": "top-left", "margin_x": 60, "margin_y": 30, "font_size": 16}))  # fmt: skip
+        step("centre", lambda: daemon.overlay.update(
+            {"anchor": "center", "margin_x": 0, "margin_y": 200, "lines": 2}))  # fmt: skip
+        step("reset", daemon.overlay.reset)
+        marks["off"] = time.time()
+        daemon.overlay.preview(0)
+        time.sleep(0.4)
+    finally:
+        out.with_suffix(".stop").touch()
+        try:
+            _, stderr = probe.communicate(timeout=20)
+        except subprocess.TimeoutExpired:
+            probe.kill()
+            _, stderr = probe.communicate()
+        daemon.shutdown()
+    assert probe.returncode == 0, stderr[-800:]
+
+    samples = json.loads(out.read_text())["samples"]
+
+    def at(name: str) -> dict:
+        """The last sample before the step after ``name`` began."""
+        order = list(marks)
+        end = marks[order[order.index(name) + 1]]
+        return [s for s in samples if s["t"] < end][-1]
+
+    def geometry(name: str) -> tuple[int, int, int, int]:
+        ours = [w for w in stacks[name] if w["layer"] == KWIN_OVERLAY_LAYER]
+        assert len(ours) == 1, stacks[name]
+        return tuple(ours[0]["geometry"])
+
+    # Nothing before the preview; the sample line from then until it is switched off,
+    # without a single unmapped sample in between, through three reconfigurations.
+    assert not any(s["mapped"] for s in samples if s["t"] < marks["preview"])
+    shown = [s for s in samples if marks["preview"] + 0.25 <= s["t"] <= marks["off"]]
+    assert shown and all(s["mapped"] for s in shown)
+    assert {s["text"] for s in shown} == {"This is where the current lyric line will appear"}
+    hidden = next(s for s in samples if s["t"] >= marks["off"] and not s["mapped"])
+    assert hidden["t"] - marks["off"] < 0.15
+
+    # As started: bottom-right, by the configured margins.
+    x, y, width, height = geometry("preview")
+    assert (x + width, y + height) == (SCREEN[0] - 40, SCREEN[1] - 90)
+    assert at("preview")["anchors"] == ["bottom", "right"]
+
+    # Moved to the opposite corner and made smaller, in place.
+    cx, cy, cwidth, cheight = geometry("corner")
+    assert (cx, cy) == (60, 30)
+    assert cwidth < width and cheight < height
+    assert at("corner")["anchors"] == ["left", "top"]
+    assert at("corner")["margins"] == {"top": 30, "bottom": 0, "left": 60, "right": 0}
+
+    # Centred, pushed 200 px down, with the second line showing.
+    mx, my, mwidth, mheight = geometry("centre")
+    assert at("centre")["anchors"] == []
+    assert abs((mx + mwidth / 2) - SCREEN[0] / 2) <= 1
+    assert abs((my + mheight / 2) - SCREEN[1] / 2) <= 1
+    assert mheight > cheight + 400  # twice the shift is padded above the text
+    assert at("centre")["next_text"] == "and this is the line that follows it"
+
+    # Reset: exactly where and how it started.
+    assert geometry("reset") == (x, y, width, height)
+    assert at("reset")["next_text"] == ""
+
+
+class LiveOverlay:
+    """A daemon with a fake player and a real overlay following it, sampled every 10 ms."""
+
+    def __init__(self, store, tmp_path, monkeypatch, *, extra_env=None, **settings: str):
+        monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
+        monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+        build_library(store)
+        self.extra_env = extra_env or {}
+        self.player = FakePlayer()
+        self.daemon = Daemon(load_settings(), store, self.player, port=0, keepalive_s=0.5)
+        self.overlay = self.daemon.overlay
+        self._tmp_path, self._settings = tmp_path, settings
+        self._out = tmp_path / "probe.json"
+        self._probe = None
+        self.stderr = ""
+        self.samples: list[dict] = []
+        threading.Thread(target=self.daemon.serve_forever, daemon=True).start()
+
+    def start(self) -> None:
+        env = child_env(
+            self._tmp_path, PORT=str(self.daemon.port), OVERLAY_FADE_MS="0", **self._settings
+        )
+        env.update(self.extra_env)
+        self._probe = subprocess.Popen(
+            ["bash", str(KWIN), "run", sys.executable, str(PROBE), str(self._out), "10"],
+            cwd=self._tmp_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            env=env,
+        )  # fmt: skip
+        wait_until(lambda: self.overlay.snapshot()["clients"] == 1, timeout=15)
+
+    def play(self) -> float:
+        """Start the synthetic track. Returns the instant playback position was 0."""
+        self.player.load_queue(self.daemon.routes._library.queue_for(PLAYLIST_ID))
+        return self.player.bus.current.captured_at_epoch_ms / 1000
+
+    def window(self) -> tuple[int, int, int, int] | None:
+        """Where KWin says our surface is, or ``None`` when it has none on screen."""
+        stack = json.loads(kwin("windows", check=True, extra_env=self.extra_env).stdout)
+        ours = [w for w in stack if w["layer"] == KWIN_OVERLAY_LAYER]
+        assert len(ours) <= 1, stack
+        return tuple(ours[0]["geometry"]) if ours else None
+
+    def finish(self) -> list[dict]:
+        self._out.with_suffix(".stop").touch()
+        try:
+            _, self.stderr = self._probe.communicate(timeout=20)
+        except subprocess.TimeoutExpired:
+            self._probe.kill()
+            _, self.stderr = self._probe.communicate()
+        self.daemon.shutdown()
+        assert self._probe.returncode == 0, self.stderr[-800:]
+        self.samples = json.loads(self._out.read_text())["samples"]
+        return self.samples
+
+    def close(self) -> None:
+        if self._probe is not None and self._probe.poll() is None:
+            self._out.with_suffix(".stop").touch()
+            try:
+                self._probe.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                self._probe.kill()
+        if not self.daemon.stopping.is_set():
+            self.daemon.shutdown()
+
+
+@pytest.fixture
+def live(compositor, store, tmp_path, monkeypatch):
+    made: list[LiveOverlay] = []
+
+    def make(**settings: str) -> LiveOverlay:
+        made.append(LiveOverlay(store, tmp_path, monkeypatch, **settings))
+        return made[-1]
+
+    yield make
+    for overlay in made:
+        overlay.close()
+
+
+def sleep_until(instant: float) -> None:
+    time.sleep(max(0.0, instant - time.time()))
+
+
+def test_lines_keep_appearing_after_settings_change_during_a_song(live):
+    """Settings changed while a song plays, with its lines coming and going as they do.
+
+    The line that is up when a setting changes must stay up, and every later line must
+    still appear: once a change had been applied, the next line after a gap or a pause
+    used never to come back.
+    """
+    overlay = live(OVERLAY_ANCHOR="bottom", OVERLAY_MARGIN_Y="120")
+    overlay.start()
+    # The synthetic lyrics: a line at 1.0 s, a gap at 2.5 s, a line at 4.0 s.
+    base = overlay.play()
+
+    sleep_until(base + 1.5)
+    first_before = overlay.window()
+    overlay.overlay.update({"font_size": 45})  # while the first line is showing
+    sleep_until(base + 2.2)
+    first_after = overlay.window()
+
+    sleep_until(base + 3.0)
+    assert overlay.window() is None  # the gap
+    overlay.overlay.update({"margin_y": 300})  # while nothing is showing
+
+    sleep_until(base + 4.6)
+    second = overlay.window()  # the line after both changes
+
+    overlay.player.pause()
+    time.sleep(0.4)
+    assert overlay.window() is None
+    overlay.overlay.update({"anchor": "top-left", "margin_x": 60, "margin_y": 30})
+    time.sleep(0.2)
+    overlay.player.position = 4.2
+    resumed_at = time.time()
+    overlay.player.play()
+    time.sleep(0.6)
+    after_pause = overlay.window()
+
+    overlay.overlay.reset()  # and back, with the line up
+    time.sleep(0.6)
+    restored = overlay.window()
+    samples = overlay.finish()
+
+    assert first_before is not None and first_after is not None
+    assert first_after[2] > first_before[2] and first_after[3] > first_before[3]  # bigger text
+    assert first_after[1] + first_after[3] == SCREEN[1] - 120
+    showing = [s for s in samples if base + 1.15 <= s["t"] <= base + 2.25]
+    assert showing and all(s["mapped"] for s in showing)  # no flicker when it changed
+
+    assert second is not None, "the line after a settings change never appeared"
+    assert second[1] + second[3] == SCREEN[1] - 300
+    assert second[3] == first_after[3]  # still the larger font
+
+    assert after_pause is not None, "the line did not come back after a change made while paused"
+    assert after_pause[:2] == (60, 30)
+    back = next(s for s in samples if s["t"] >= resumed_at and s["mapped"])
+    assert back["t"] - resumed_at < 0.25 and back["text"] == "an invented last line"
+
+    assert restored is not None and restored[3] == first_before[3]  # 32 pt again
+    assert restored[1] + restored[3] == SCREEN[1] - 120
+    assert "Traceback" not in overlay.stderr and "WARNING" not in overlay.stderr
+
+
+def test_many_changes_shown_and_hidden_never_lose_the_window(live):
+    """Every kind of setting, changed both while a line is up and while none is."""
+    overlay = live()
+    overlay.start()
+    changes = [
+        {"font_size": 20}, {"max_width": 400}, {"anchor": "top"}, {"margin_y": 250},
+        {"lines": 2}, {"font": "Serif Italic"}, {"color": "#ffe066"}, {"anchor": "center"},
+        {"margin_x": -200}, {"font_size": 60, "max_width": 1500}, {"monitor": "Virtual-0"},
+        {"monitor": ""}, {"anchor": "bottom-left", "margin_x": 10, "margin_y": 10},
+    ]  # fmt: skip
+    seen = []
+    for index, change in enumerate(changes):
+        shown_first = index % 2 == 0
+        if shown_first:  # change it with the sample line up, then hide and show again
+            overlay.overlay.preview(30)
+            time.sleep(0.25)
+        overlay.overlay.update(change)
+        time.sleep(0.2)
+        overlay.overlay.preview(0)
+        time.sleep(0.2)
+        hidden = overlay.window()
+        overlay.overlay.preview(30)
+        time.sleep(0.35)
+        seen.append((change, hidden, overlay.window()))
+        overlay.overlay.preview(0)
+        time.sleep(0.15)
+    overlay.overlay.reset()
+    overlay.overlay.preview(30)
+    time.sleep(0.4)
+    final = overlay.window()
+    samples = overlay.finish()
+
+    for change, hidden, shown in seen:
+        assert hidden is None, change
+        assert shown is not None, f"the overlay did not come back after {change}"
+        assert shown[2] > 40 and shown[3] > 20, (change, shown)
+    by_change = {json.dumps(change): shown for change, _hidden, shown in seen}
+    assert by_change['{"max_width": 400}'][2] <= 440
+    assert by_change['{"anchor": "bottom-left", "margin_x": 10, "margin_y": 10}'][0] == 10
+    # Back to how it started: centred along the bottom, 120 px up, one row of 32 pt text.
+    x, y, width, height = final
+    assert abs((x + width / 2) - SCREEN[0] / 2) <= 1 and y + height == SCREEN[1] - 120
+    assert 60 < height < 120
+    assert samples[-1]["mapped"] and "Traceback" not in overlay.stderr
+    assert "WARNING" not in overlay.stderr
+
+
+def test_an_overlay_started_with_stored_overrides_shows_its_first_line(live, store):
+    """The settings arrive before anything has ever been shown; the first line must show."""
+    overlay = live(OVERLAY_ANCHOR="bottom", OVERLAY_MARGIN_Y="120")
+    overlay.overlay.update({"font_size": 45, "anchor": "top-right", "margin_x": 70, "margin_y": 40})
+    overlay.start()
+    base = overlay.play()
+    sleep_until(base + 1.6)
+    first = overlay.window()
+    sleep_until(base + 4.6)
+    second = overlay.window()
+    samples = overlay.finish()
+    assert first is not None and second is not None
+    assert (first[0] + first[2], first[1]) == (SCREEN[0] - 70, 40)
+    assert first[3] > 100  # 45 pt, not the 32 pt it was started with
+    assert not any(s["mapped"] for s in samples if base + 2.6 <= s["t"] <= base + 3.7)
+
+
+def test_the_overlay_moves_between_monitors_and_can_be_handed_back(
+    two_screens, store, tmp_path, monkeypatch
+):
+    overlay = LiveOverlay(store, tmp_path, monkeypatch, extra_env=TWO_SCREENS)
+    try:
+        overlay.start()
+        overlay.overlay.preview(30)
+        time.sleep(0.5)
+        chosen = overlay.window()
+        overlay.overlay.update({"monitor": "Virtual-1"})
+        time.sleep(0.5)
+        second = overlay.window()
+        overlay.overlay.update({"monitor": "Virtual-0"})
+        time.sleep(0.5)
+        first = overlay.window()
+        overlay.overlay.update({"monitor": "Virtual-1"})
+        time.sleep(0.4)
+        overlay.overlay.reset()  # no monitor named: the compositor chooses again
+        time.sleep(0.5)
+        released = overlay.window()
+        overlay.overlay.preview(0)  # and it still hides and shows after all that
+        time.sleep(0.3)
+        hidden = overlay.window()
+        overlay.overlay.preview(30)
+        time.sleep(0.4)
+        again = overlay.window()
+        overlay.finish()
+    finally:
+        overlay.close()
+    assert chosen is not None and 0 <= chosen[0] < SCREEN[0]
+    assert second is not None and SCREEN[0] <= second[0] < 2 * SCREEN[0]
+    assert (second[0] - SCREEN[0], *second[1:]) == chosen  # the same place, one screen over
+    assert first == chosen and released == chosen
+    assert hidden is None and again == chosen
+    assert "Traceback" not in overlay.stderr and "WARNING" not in overlay.stderr
