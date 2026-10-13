@@ -1,0 +1,25 @@
+{
+  "_comment": "Shared by the Python timeline tests and the node tests for static/clock.js. Each case: line times in ms, a position in ms, lead and offset in ms, and the expected line index (-1 means before the first line).",
+  "cases": [
+    {"name": "no lines at all", "times": [], "position_ms": 5000, "lead_ms": 0, "offset_ms": 0, "expected": -1},
+    {"name": "before the first line", "times": [1000, 2000, 3000], "position_ms": 999, "lead_ms": 0, "offset_ms": 0, "expected": -1},
+    {"name": "at position zero", "times": [1000, 2000, 3000], "position_ms": 0, "lead_ms": 0, "offset_ms": 0, "expected": -1},
+    {"name": "a line at time zero is current from the start", "times": [0, 2000], "position_ms": 0, "lead_ms": 0, "offset_ms": 0, "expected": 0},
+    {"name": "exactly on a timestamp", "times": [1000, 2000, 3000], "position_ms": 1000, "lead_ms": 0, "offset_ms": 0, "expected": 0},
+    {"name": "between two lines", "times": [1000, 2000, 3000], "position_ms": 1500, "lead_ms": 0, "offset_ms": 0, "expected": 0},
+    {"name": "one ms before the next line", "times": [1000, 2000, 3000], "position_ms": 1999, "lead_ms": 0, "offset_ms": 0, "expected": 0},
+    {"name": "exactly on the second timestamp", "times": [1000, 2000, 3000], "position_ms": 2000, "lead_ms": 0, "offset_ms": 0, "expected": 1},
+    {"name": "after the last line", "times": [1000, 2000, 3000], "position_ms": 999999, "lead_ms": 0, "offset_ms": 0, "expected": 2},
+    {"name": "fractional position", "times": [1000, 2000, 3000], "position_ms": 1999.6, "lead_ms": 0, "offset_ms": 0, "expected": 0},
+    {"name": "lead shows a line early", "times": [1000, 2000, 3000], "position_ms": 1850, "lead_ms": 150, "offset_ms": 0, "expected": 1},
+    {"name": "lead not yet reached", "times": [1000, 2000, 3000], "position_ms": 1849, "lead_ms": 150, "offset_ms": 0, "expected": 0},
+    {"name": "positive offset brings lyrics sooner", "times": [1000, 2000, 3000], "position_ms": 1700, "lead_ms": 0, "offset_ms": 300, "expected": 1},
+    {"name": "negative offset delays lyrics", "times": [1000, 2000, 3000], "position_ms": 2200, "lead_ms": 0, "offset_ms": -300, "expected": 0},
+    {"name": "negative offset before the first line", "times": [1000, 2000, 3000], "position_ms": 1200, "lead_ms": 0, "offset_ms": -300, "expected": -1},
+    {"name": "lead and offset add up", "times": [1000, 2000, 3000], "position_ms": 2700, "lead_ms": 150, "offset_ms": 150, "expected": 2},
+    {"name": "lead and offset cancel", "times": [1000, 2000, 3000], "position_ms": 2000, "lead_ms": 150, "offset_ms": -150, "expected": 1},
+    {"name": "equal timestamps: the last of them is current", "times": [1000, 2000, 2000, 3000], "position_ms": 2000, "lead_ms": 0, "offset_ms": 0, "expected": 2},
+    {"name": "single line, before", "times": [5000], "position_ms": 4999, "lead_ms": 0, "offset_ms": 0, "expected": -1},
+    {"name": "single line, after", "times": [5000], "position_ms": 5000, "lead_ms": 0, "offset_ms": 0, "expected": 0}
+  ]
+}

@@ -1,0 +1,160 @@
+"""Typed access to what is cached for a track: its audio, its lyrics and its state.
+
+The rule for "is this stage done" lives here and nowhere else: a provenance file
+(``audio.json``, ``lyrics.json``) counts only when the file it names is present and
+non-empty. A provenance file whose audio was deleted is treated as absent, so the next
+sync simply fetches it again. There is no database to fall out of step.
+"""
+
+from __future__ import annotations
+
+import contextlib
+from dataclasses import dataclass
+from pathlib import Path
+
+from ..errors import CacheError
+from ..models import AudioAsset, LyricsInfo, LyricsKind, Playlist, Track, TrackState
+from .store import CacheStore
+
+# ------------------------------- tracklist -------------------------------- #
+
+
+def read_playlist(store: CacheStore, playlist_id: str) -> Playlist:
+    return Playlist.from_dict(store.read_json(store.playlist_json(playlist_id)))
+
+
+def read_track(store: CacheStore, track_id: str) -> Track:
+    return Track.from_dict(store.read_json(store.track_json(track_id)))
+
+
+# ---------------------------------- audio ---------------------------------- #
+
+
+def read_audio(store: CacheStore, track_id: str) -> AudioAsset | None:
+    """The track's audio provenance, or ``None`` unless the audio file is really there."""
+    data = store.read_json(store.audio_json(track_id), default=None)
+    if not isinstance(data, dict):
+        return None
+    try:
+        asset = AudioAsset.from_dict(data)
+        present = store.has(store.track_file(track_id, asset.file))
+    except (KeyError, TypeError, ValueError, CacheError):
+        return None
+    return asset if present else None
+
+
+def audio_path(store: CacheStore, track_id: str, asset: AudioAsset) -> Path:
+    return store.track_file(track_id, asset.file)
+
+
+def write_audio(store: CacheStore, track_id: str, asset: AudioAsset) -> None:
+    """Record provenance for an audio file already in place under its final name."""
+    store.write_json(store.audio_json(track_id), asset.to_dict())
+
+
+def clear_audio(store: CacheStore, track_id: str) -> None:
+    data = store.read_json(store.audio_json(track_id), default=None)
+    if isinstance(data, dict) and isinstance(data.get("file"), str):
+        # A file name we would never have written is left alone, not followed.
+        with contextlib.suppress(CacheError):
+            store.remove(store.track_file(track_id, data["file"]))
+    store.remove(store.audio_json(track_id))
+
+
+# ---------------------------------- lyrics --------------------------------- #
+
+_LYRICS_FILES = {LyricsKind.SYNCED: "lyrics.lrc", LyricsKind.PLAIN: "lyrics.txt"}
+
+
+def read_lyrics_info(store: CacheStore, track_id: str) -> LyricsInfo | None:
+    """The track's lyrics provenance, or ``None`` when it is absent or its text is gone."""
+    data = store.read_json(store.lyrics_json(track_id), default=None)
+    if not isinstance(data, dict):
+        return None
+    try:
+        info = LyricsInfo.from_dict(data)
+        present = info.file is None or store.has(store.track_file(track_id, info.file))
+    except (KeyError, TypeError, ValueError, CacheError):
+        return None
+    return info if present else None
+
+
+def read_lyrics_text(store: CacheStore, track_id: str) -> tuple[LyricsInfo, str] | None:
+    """Provenance plus the stored text; ``None`` when there is no text (or no lyrics)."""
+    info = read_lyrics_info(store, track_id)
+    if info is None or info.file is None:
+        return None
+    return info, store.track_file(track_id, info.file).read_text(encoding="utf-8")
+
+
+def write_lyrics(
+    store: CacheStore, track_id: str, info: LyricsInfo, text: str | None
+) -> LyricsInfo:
+    """Store lyrics text (when the kind has any) and its provenance. Returns what was saved."""
+    clear_lyrics(store, track_id)
+    name = _LYRICS_FILES.get(info.kind) if text else None
+    if name:
+        store.write_text(
+            store.track_file(track_id, name), text if text.endswith("\n") else text + "\n"
+        )
+    saved = LyricsInfo.from_dict({**info.to_dict(), "file": name})
+    store.write_json(store.lyrics_json(track_id), saved.to_dict())
+    return saved
+
+
+def clear_lyrics(store: CacheStore, track_id: str) -> None:
+    for path in (
+        store.lyrics_lrc(track_id),
+        store.lyrics_txt(track_id),
+        store.lyrics_json(track_id),
+    ):
+        store.remove(path)
+
+
+# ---------------------------------- state ---------------------------------- #
+
+
+def read_track_state(store: CacheStore, track_id: str) -> TrackState:
+    data = store.read_json(store.track_state(track_id), default=None)
+    return TrackState.from_dict(data) if isinstance(data, dict) else TrackState()
+
+
+def write_track_state(store: CacheStore, track_id: str, state: TrackState) -> None:
+    store.write_json(store.track_state(track_id), state.to_dict())
+
+
+# --------------------------------- overview -------------------------------- #
+
+
+@dataclass(frozen=True, slots=True)
+class TrackStatus:
+    """Everything cached for one track, read in one go for ``status`` and the API."""
+
+    track: Track
+    audio: AudioAsset | None
+    lyrics: LyricsInfo | None
+    has_cover: bool
+    state: TrackState
+
+    @property
+    def lyrics_kind(self) -> LyricsKind:
+        return self.lyrics.kind if self.lyrics else LyricsKind.MISSING
+
+    @property
+    def playable(self) -> bool:
+        return self.audio is not None
+
+
+def track_status(store: CacheStore, track_id: str) -> TrackStatus:
+    return TrackStatus(
+        track=read_track(store, track_id),
+        audio=read_audio(store, track_id),
+        lyrics=read_lyrics_info(store, track_id),
+        has_cover=store.has(store.track_cover(track_id)),
+        state=read_track_state(store, track_id),
+    )
+
+
+def playlist_status(store: CacheStore, playlist: Playlist) -> list[TrackStatus]:
+    """Status of each distinct track of ``playlist``, in playlist order."""
+    return [track_status(store, track_id) for track_id in dict.fromkeys(playlist.track_ids)]

@@ -1,0 +1,10 @@
+# Runtime dependencies.
+#
+# Only `sync` needs anything beyond the Python standard library: yt-dlp, for audio.
+# `serve` and `ctl` run on the standard library alone (plus the mpv executable), and
+# `overlay` adds the system GTK 4 bindings, which pip cannot provide.
+#
+# yt-dlp is installed here rather than from a distribution package because YouTube
+# changes break old releases. First remedy for download failures:
+#   .venv/bin/pip install -U yt-dlp
+yt-dlp

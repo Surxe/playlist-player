@@ -1,0 +1,34 @@
+# Data and scratch directories are anchored to the repo root with a leading slash. An
+# unanchored `cache/` also matches the source package playlist_player/cache/ and silently
+# keeps it out of commits.
+
+# Planning notes for the agent building this repo. Local working documents, not source.
+/implementation/
+
+# Everything fetched for a playlist: tracklists, audio, lyrics, cover art. Re-derivable
+# by `sync`, large, and third-party content that must never be committed.
+/cache/
+
+# Hand-authored per-machine state: per-track timing offsets and audio pins.
+/state/
+
+# Secrets and per-machine config. Only *.example files are committed.
+.env
+*.env
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Runtime output
+/logs/
+*.log

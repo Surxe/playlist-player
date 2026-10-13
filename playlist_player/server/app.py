@@ -1,0 +1,197 @@
+"""Wiring for the daemon: settings to store to player to bus to HTTP server.
+
+:class:`Daemon` is the HTTP side and takes any :class:`Player`, which is how the tests
+run it with a fake. :func:`run` is the real thing: it starts mpv, serves until asked to
+stop, and takes mpv down with it.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import signal
+import sys
+import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from ..cache import CacheStore
+from ..config import Settings
+from ..playback.base import Player
+from ..playback.mpv import MpvPlayer
+from ..playback.state import StateBus
+from . import sse
+from .library import Library
+from .routes import EVENTS_PATH, MAX_BODY_BYTES, Response, Routes
+from .security import allowed_hosts, check_request
+
+# Sent with every response. No CORS header appears anywhere, on purpose.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
+}
+
+
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True  # an open event stream must not keep the process alive
+    allow_reuse_address = True
+
+
+class Daemon:
+    def __init__(
+        self,
+        settings: Settings,
+        store: CacheStore,
+        player: Player,
+        *,
+        port: int | None = None,
+        keepalive_s: float = sse.KEEPALIVE_S,
+        log: bool = False,
+    ) -> None:
+        self.player = player
+        self.routes = Routes(Library(store), player)
+        self.keepalive_s = keepalive_s
+        self.stopping = threading.Event()
+        self._streams = 0
+        self._streams_lock = threading.Lock()
+        self._log = log
+        self._httpd = _Server(
+            (settings.host, settings.port if port is None else port), self._handler_class()
+        )
+        self.host = settings.host
+        self.port = self._httpd.server_address[1]
+        self._hosts = allowed_hosts(self.host, self.port)
+
+    @property
+    def url(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+    @property
+    def open_streams(self) -> int:
+        with self._streams_lock:
+            return self._streams
+
+    def serve_forever(self) -> None:
+        self._httpd.serve_forever(poll_interval=0.2)
+
+    def shutdown(self) -> None:
+        """Stop accepting requests and let open event streams end."""
+        self.stopping.set()
+        self._httpd.shutdown()
+        self._httpd.server_close()
+
+    def _handler_class(self) -> type[BaseHTTPRequestHandler]:
+        daemon = self
+
+        class Handler(BaseHTTPRequestHandler):
+            server_version = "playlist-player"
+            sys_version = ""
+
+            def _send(self, response: Response) -> None:
+                self.send_response(response.status)
+                self.send_header("Content-Type", response.content_type)
+                self.send_header("Content-Length", str(len(response.body)))
+                for name, value in _SECURITY_HEADERS.items():
+                    self.send_header(name, value)
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(response.body)
+
+            def _handle(self) -> None:
+                refusal = check_request(self.command, self.headers, daemon._hosts)
+                if refusal is not None:
+                    self._send(Response.error(*refusal))
+                    return
+                path = urlsplit(self.path).path
+                if self.command == "GET" and path == EVENTS_PATH:
+                    self._stream()
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    length = -1
+                if not 0 <= length <= MAX_BODY_BYTES:
+                    self._send(Response.error(413, "request body too large"))
+                    return
+                body = self.rfile.read(length) if length else b""
+                self._send(daemon.routes.dispatch(self.command, path, body))
+
+            def _stream(self) -> None:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                for name, value in _SECURITY_HEADERS.items():
+                    self.send_header(name, value)
+                self.send_header("X-Accel-Buffering", "no")
+                self.end_headers()
+                with daemon._streams_lock:
+                    daemon._streams += 1
+                try:
+                    sse.stream_states(
+                        self.wfile,
+                        daemon.player.bus,
+                        daemon.stopping,
+                        keepalive_s=daemon.keepalive_s,
+                    )
+                finally:
+                    with daemon._streams_lock:
+                        daemon._streams -= 1
+
+            do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = _handle  # noqa: N815
+
+            def log_request(self, code: object = "-", size: object = "-") -> None:
+                # Actions and refusals only; an access log of every read is noise.
+                status = (
+                    int(code) if str(int(code) if isinstance(code, int) else code).isdigit() else 0
+                )
+                if daemon._log and (self.command != "GET" or status >= 400):
+                    sys.stderr.write(f"{self.command} {urlsplit(self.path).path} {status}\n")
+
+            def log_message(self, format: str, *args: object) -> None:
+                pass  # the standard library's own chatter (malformed requests and the like)
+
+        return Handler
+
+
+def runtime_dir() -> Path:
+    """Where the mpv socket lives: private to the user and gone at logout."""
+    base = os.environ.get("XDG_RUNTIME_DIR")
+    if base and Path(base).is_dir():
+        return Path(base) / "playlist-player"
+    return Path(tempfile.gettempdir()) / f"playlist-player-{os.getuid()}"
+
+
+def run(settings: Settings) -> int:
+    """Run the daemon in the foreground until SIGINT or SIGTERM."""
+    store = CacheStore(settings.cache_dir, settings.state_dir)
+    player = MpvPlayer(
+        StateBus(),
+        socket_path=runtime_dir() / f"mpv-{settings.port}.sock",
+        mpv_bin=settings.mpv_bin,
+        audio_output=settings.mpv_audio_output,
+        mpris_plugin=settings.mpv_mpris_plugin,
+    )
+    player.start()
+    try:
+        daemon = Daemon(settings, store, player, log=True)
+    except OSError as exc:
+        player.close()
+        print(f"playlist_player: cannot listen on {settings.base_url}: {exc}", file=sys.stderr)
+        return 1
+
+    def stop(_signum: int, _frame: object) -> None:
+        # shutdown() blocks until serve_forever returns, so it cannot run on this thread.
+        threading.Thread(target=daemon.shutdown, daemon=True).start()
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    print(f"playlist-player daemon on {daemon.url} (cache: {settings.cache_dir})", flush=True)
+    try:
+        daemon.serve_forever()
+    finally:
+        with contextlib.suppress(Exception):
+            player.close()
+    return 0

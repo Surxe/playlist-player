@@ -1,0 +1,29 @@
+[project]
+name = "playlist-player"
+version = "0.1.0"
+description = "Cache a Spotify playlist's audio and time-synced lyrics, play it through mpv, and show the current lyric line in an overlay."
+requires-python = ">=3.11"
+
+[tool.optionsconfig]
+# The settings schema lives in the package; build.py reads these paths to regenerate
+# .env.example and the README's Configuration section from it.
+schema_module = "playlist_player.options_schema"
+env_example_path = ".env.example"
+readme_path = "README.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -m 'not network'"
+markers = [
+    "network: talks to a real third-party service; never part of the default run",
+    "mpv: spawns a real mpv process (audio output disabled)",
+    "wayland: needs the headless compositor from scripts/headless-kwin.sh",
+    "localcache: reads real fetched files under cache/; skipped when they are absent",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]

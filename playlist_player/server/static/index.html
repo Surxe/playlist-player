@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>playlist-player</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>playlist-player</h1>
+    <select id="playlists" aria-label="Playlist"></select>
+    <label class="check"><input type="checkbox" id="shuffle"> Shuffle</label>
+    <span id="coverage" class="muted"></span>
+    <span id="connection" class="pill off">offline</span>
+  </header>
+
+  <main>
+    <section id="tracks-pane" aria-label="Tracks">
+      <ol id="tracks"></ol>
+    </section>
+
+    <section id="lyrics-pane" aria-label="Lyrics">
+      <div id="lyrics-head">
+        <span id="lyrics-note" class="muted"></span>
+        <span id="offset-tools">
+          <span class="muted">offset</span>
+          <button type="button" data-nudge="-250" title="Lyrics later by 250 ms">-250</button>
+          <button type="button" data-nudge="-50" title="Lyrics later by 50 ms">-50</button>
+          <output id="offset">0 ms</output>
+          <button type="button" data-nudge="50" title="Lyrics sooner by 50 ms">+50</button>
+          <button type="button" data-nudge="250" title="Lyrics sooner by 250 ms">+250</button>
+          <button type="button" id="offset-reset" title="Reset the offset">reset</button>
+        </span>
+      </div>
+      <ol id="lyrics"></ol>
+    </section>
+  </main>
+
+  <footer>
+    <img id="cover" alt="" hidden>
+    <div id="now">
+      <div id="title">Nothing playing</div>
+      <div id="artists" class="muted"></div>
+    </div>
+    <div id="transport">
+      <button type="button" id="prev" title="Previous (Up)">Prev</button>
+      <button type="button" id="toggle" class="primary" title="Play or pause (Space)">Play</button>
+      <button type="button" id="next" title="Next (Down)">Next</button>
+      <button type="button" id="stop" title="Stop">Stop</button>
+    </div>
+    <div id="seek-row">
+      <span id="elapsed">0:00</span>
+      <input type="range" id="seek" min="0" max="1" step="0.1" value="0" aria-label="Position">
+      <span id="duration">0:00</span>
+    </div>
+    <label id="volume-row">Vol
+      <input type="range" id="volume" min="0" max="100" step="1" value="100" aria-label="Volume">
+    </label>
+  </footer>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

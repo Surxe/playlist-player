@@ -1,0 +1,7 @@
+# Development and test dependencies. Includes the runtime deps.
+-r requirements.txt
+pytest>=8.0
+ruff>=0.6
+# Generates .env.example and the README's Configuration section from the settings
+# schema (build.py). Not imported by the package itself.
+optionsconfig>=0.4.0
