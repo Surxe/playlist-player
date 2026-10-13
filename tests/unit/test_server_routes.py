@@ -199,7 +199,11 @@ def test_shuffle_refuses_what_it_cannot_shuffle(routes, store):
 def test_the_session_document_says_what_would_be_resumed(routes, player):
     assert get(routes, "/session")[1] == {
         "playlist_id": None, "track_id": None, "position_s": 0.0, "volume": None,
-        "settings": {"fade_in_s": 0.0},
+        "settings": {
+            "fade_in_s": 0.0,
+            "include_without_lyrics": True,
+            "include_without_audio": True,
+        },
     }  # fmt: skip
     post(routes, "/player/load", {"playlist_id": PLAYLIST_ID})
     assert get(routes, "/session")[1]["playlist_id"] == PLAYLIST_ID
@@ -523,11 +527,22 @@ def test_an_offset_is_kept_per_track_and_comes_back_after_a_restart(store, playe
 
 def test_playback_settings_are_changed_through_the_api_and_checked(routes, store):
     response, body = post(routes, "/session/settings", {"fade_in_s": 3})
-    assert response.status == 200 and body["settings"] == {"fade_in_s": 3.0}
-    assert get(routes, "/session")[1]["settings"] == {"fade_in_s": 3.0}
+    assert response.status == 200 and body["settings"]["fade_in_s"] == 3.0
+    assert get(routes, "/session")[1]["settings"]["fade_in_s"] == 3.0
     assert json.loads(store.session_json.read_text())["settings"] == {"fade_in_s": 3.0}
     for bad in ({"fade_in_s": 31}, {"fade_in_s": "3"}, {"cache_dir": "/tmp"}):
         response, answer = post(routes, "/session/settings", bad)
         assert response.status == 400 and "error" in answer
-    assert get(routes, "/session")[1]["settings"] == {"fade_in_s": 3.0}
+    assert get(routes, "/session")[1]["settings"]["fade_in_s"] == 3.0
     assert routes.dispatch("GET", API + "/session/settings").status == 405
+
+
+def test_track_filters_change_what_a_playlist_lists_and_loads(routes, player):
+    response, body = post(routes, "/session/settings", {"include_without_lyrics": False})
+    assert response.status == 200 and body["settings"]["include_without_lyrics"] is False
+    _, playlist = get(routes, f"/playlists/{PLAYLIST_ID}")
+    assert [t["id"] for t in playlist["tracks"]] == ["TRK0000", "TRK0001", "TRK0002", "TRK0004"]
+    assert playlist["hidden"] == 1 and playlist["coverage"]["tracks"] == 5
+    _, loaded = post(routes, "/player/load", {"playlist_id": PLAYLIST_ID})
+    assert loaded["queue_length"] == 3
+    assert post(routes, "/session/settings", {"include_without_audio": "no"})[0].status == 400

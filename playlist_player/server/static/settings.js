@@ -57,3 +57,37 @@ export function initPlaybackSettings({ getJson, postJson }) {
     },
   };
 }
+
+// The tracks section: which tracks a playlist is made of. `changed` is called after a
+// switch is saved, so the track list can be drawn again without the tracks left out.
+export function initTrackSettings({ getJson, postJson, changed }) {
+  const boxes = {
+    include_without_lyrics: document.getElementById("include-without-lyrics"),
+    include_without_audio: document.getElementById("include-without-audio"),
+  };
+  const note = document.getElementById("track-note");
+
+  function show(settings) {
+    for (const [name, box] of Object.entries(boxes)) box.checked = settings[name];
+  }
+
+  for (const [name, box] of Object.entries(boxes)) {
+    box.addEventListener("change", async () => {
+      const result = await postJson("/session/settings", { [name]: box.checked });
+      note.textContent = result.ok ? "" : result.error;
+      if (result.ok) {
+        show(result.data.settings);
+        changed();
+      } else {
+        box.checked = !box.checked; // it was not taken: show what is still in force
+      }
+    });
+  }
+
+  return {
+    async opened() {
+      const session = await getJson("/session").catch(() => null);
+      if (session) show(session.settings);
+    },
+  };
+}

@@ -137,6 +137,15 @@ starts up, over the number of seconds you set, instead of coming on at full volu
 default, turns it off. Your volume is not changed while it fades. It needs mpv 0.37 or
 newer; with an older mpv playback simply starts at full level.
 
+**Tracks** (also under **Settings**) chooses which tracks a playlist is made of. Both
+switches are on to begin with, so nothing is left out. With **Include tracks without
+synced lyrics** off, tracks that have no synced lyrics (plain text only, instrumental,
+or none found) are taken out of the track list and skipped when playing. With **Include
+tracks without audio** off, tracks with no audio, which can never be played, are no
+longer shown. A change applies at once, to the queue that is playing too; the song that
+is on carries on even if it is one of those left out. A shuffled order is not disturbed:
+a track that is left out keeps its place for when it is included again.
+
 `ctl` exists so a desktop shortcut can pause from inside a fullscreen application. With
 `PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN` set to the plugin's path (Debian:
 `/usr/lib/mpv-mpris/mpris.so`), the keyboard's media keys work too.
@@ -187,7 +196,7 @@ fullscreen.
 |------|-------|
 | `cache/` | Everything fetched: track lists, audio, lyrics, covers. Safe to delete; `sync` rebuilds it. |
 | `state/` | What you changed by hand: lyric offsets, audio pins, and overlay settings set from the page. Not rebuilt. |
-| `state/session.json` | Each shuffled playlist's order, and what the daemon resumes: the playlist, song, position and volume. Rewritten as playback changes; deleting it just starts fresh. |
+| `state/session.json` | Each shuffled playlist's order, and what the daemon resumes: the playlist, song, position and volume, with the settings made on the page (fade in, which tracks are included). Rewritten as playback changes; deleting it just starts fresh. |
 
 Both are gitignored and sit in the repo by default; `PLAYLIST_PLAYER_CACHE_DIR` and
 `PLAYLIST_PLAYER_STATE_DIR` move them. Files get ordinary permissions, whatever your

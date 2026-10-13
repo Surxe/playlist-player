@@ -8,6 +8,7 @@ paths (:meth:`queue_for`) hands them to the player only.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -143,10 +144,18 @@ class Library:
             raise NotInCacheError(f"playlist {playlist_id} has no cached audio to play")
         return playable
 
-    def playable_ids(self, playlist_id: str) -> list[str]:
-        """Track IDs that can be played, in playlist order; a repeat is listed each time."""
+    def playable_ids(self, playlist_id: str, *, synced_only: bool = False) -> list[str]:
+        """Track IDs that can be played, in playlist order; a repeat is listed each time.
+
+        ``synced_only`` leaves out the tracks without synced lyrics, and can be empty.
+        """
         playable = self._playable(playlist_id)
-        return [t for t in self._playlist(playlist_id).track_ids if t in playable]
+        return [
+            track_id
+            for track_id in self._playlist(playlist_id).track_ids
+            if track_id in playable
+            and not (synced_only and playable[track_id].lyrics_kind is not LyricsKind.SYNCED)
+        ]
 
     def queue_for(
         self,
@@ -155,16 +164,17 @@ class Library:
         start_track_id: str | None = None,
         order: Sequence[str] | None = None,
     ) -> PlayQueue:
-        """A queue of the playable tracks: in playlist order, or in ``order`` if given.
+        """A queue of the playable tracks: in playlist order, or the ones in ``order``.
 
-        ``order`` must be a rearrangement of :meth:`playable_ids`; anything else is refused,
-        so a stale saved order cannot queue a track that is no longer there.
+        ``order`` must be drawn from :meth:`playable_ids`, in any arrangement and with
+        any of them left out; anything else is refused, so a stale saved order cannot
+        queue a track that is no longer there.
         """
         playable = self._playable(playlist_id)
         expected = self.playable_ids(playlist_id)
         if order is None:
             order = expected
-        elif sorted(order) != sorted(expected):
+        elif not order or Counter(order) - Counter(expected):
             raise NotInCacheError(f"the order for playlist {playlist_id} is out of date")
         entries = []
         for track_id in order:
