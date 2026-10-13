@@ -185,17 +185,6 @@ button:disabled:hover { border-color: var(--line); }
   padding: 3px 6px;
 }
 #overlay-form .drop { padding: 0 6px; color: var(--muted); }
-#overlay-lines {
-  margin: 8px 0 0;
-  padding: 8px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-size: 12px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 @media (max-width: 760px) {
   main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
   #tracks-pane { border-right: 0; border-bottom: 1px solid var(--line); }

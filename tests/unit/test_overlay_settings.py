@@ -16,7 +16,6 @@ from playlist_player.overlay_settings import (
     OverlaySettingError,
     OverlaySettings,
     clean,
-    env_lines,
     env_name,
     prune,
     salvage,
@@ -116,37 +115,6 @@ def test_stored_overrides_keep_what_is_usable_and_report_the_rest():
     assert salvage(None)[0] == {}
 
 
-def test_settings_lines_cover_only_what_differs_and_quote_what_needs_it(defaults):
-    lines = env_lines(
-        defaults,
-        {"font": "Serif Italic", "margin_y": 200, "anchor": "bottom", "monitor": "DP-2"},
-    )
-    assert lines == [
-        "PLAYLIST_PLAYER_OVERLAY_MARGIN_Y=200",
-        "PLAYLIST_PLAYER_OVERLAY_MONITOR=DP-2",
-        'PLAYLIST_PLAYER_OVERLAY_FONT="Serif Italic"',
-    ]
-    assert env_lines(defaults, {}) == []
-
-
-def test_settings_lines_read_back_as_the_same_values(defaults, tmp_path, monkeypatch):
-    """The lines are for pasting into a settings file; a file of them must mean the same."""
-    overrides = {"font": "DejaVu Sans, Bold", "color": "#ffe066", "monitor": "DP-2",
-                 "anchor": "top-right", "margin_x": -15, "lines": 2}  # fmt: skip
-    env_file = tmp_path / "settings.env"
-    env_file.write_text("\n".join(env_lines(defaults, overrides)) + "\n")
-    assert OverlaySettings.from_settings(load_settings(env_file=env_file)) == defaults.merged(
-        overrides
-    )
-    # And through a shell, which is how a launcher may read the same file.
-    import subprocess
-
-    script = f'set -a; . "{env_file}"; printf "%s|%s" "$PLAYLIST_PLAYER_OVERLAY_FONT" '
-    script += '"$PLAYLIST_PLAYER_OVERLAY_COLOR"'
-    shown = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True)
-    assert shown.stdout == "DejaVu Sans, Bold|#ffe066"
-
-
 # --------------------------------- the store -------------------------------- #
 
 
@@ -154,16 +122,15 @@ def test_the_document_carries_configured_values_overrides_and_the_result(default
     config = OverlayConfig(defaults, store)
     first = config.snapshot()
     assert first["overrides"] == {} and first["settings"] == first["defaults"]
-    assert (first["clients"], first["preview_until_ms"], first["env_lines"]) == (0, 0, [])
+    assert (first["clients"], first["preview_until_ms"]) == (0, 0)
+    assert set(first) == {
+        "version", "defaults", "overrides", "settings", "preview_until_ms", "clients",
+    }  # fmt: skip
 
     after = config.update({"margin_y": 300, "anchor": "top"})
     assert after["version"] == first["version"] + 1
     assert after["overrides"] == {"margin_y": 300, "anchor": "top"}
     assert after["settings"]["margin_y"] == 300 and after["defaults"]["margin_y"] == 120
-    assert after["env_lines"] == [
-        "PLAYLIST_PLAYER_OVERLAY_ANCHOR=top",
-        "PLAYLIST_PLAYER_OVERLAY_MARGIN_Y=300",
-    ]
     assert set(config.describe()["rules"]) == set(RULES)
     assert config.describe()["rules"]["margin_x"] == {"kind": "int", "min": -5000, "max": 5000}
 
@@ -179,7 +146,7 @@ def test_overrides_are_stored_and_survive_a_restart(defaults, store):
 
 
 def test_once_a_value_is_the_configured_one_its_override_is_gone(defaults, store):
-    """Copy the lines into the settings file, restart, and the file is what counts again."""
+    """Configure a value the page had set, restart, and the configuration is what counts."""
     OverlayConfig(defaults, store).update({"margin_y": 300, "margin_x": 25})
     reconfigured = defaults.merged({"margin_y": 300})
     assert OverlayConfig(reconfigured, store).snapshot()["overrides"] == {"margin_x": 25}

@@ -117,8 +117,8 @@ def test_the_panel_shows_the_settings_and_changes_reach_the_daemon(daemon, tmp_p
         {"eval": "t.type(t.field('font'), 'Serif Italic')"},
         {"eval": "t.drag(t.beside('Font size'), '48')"},
         {"eval": "t.drag(t.beside('Text colour'), '#ffe066')"},
-        {"wait": "t.text('overlay-lines').includes('COLOR=#ffe066')"},
-        {"eval": "t.text('overlay-lines')"},
+        {"wait": "t.overridden('color')[0]"},  # the last change has come back from the daemon
+        {"eval": "document.getElementById('overlay-pane').textContent"},
         {"eval": "t.values('font_size', 'color')"},  # the slider's and the picker's partners
         {"eval": "t.overridden('margin_y', 'margin_x', 'font')"},
         {"eval": "t.el('overlay-reset').disabled"},
@@ -128,14 +128,10 @@ def test_the_panel_shows_the_settings_and_changes_reach_the_daemon(daemon, tmp_p
     assert results[0] is True
     assert results[len(OPEN) + 1 : len(OPEN) + 3] == [["120", "overlay not running"], True]
 
-    lines, partners, overridden, reset_disabled, _shot = results[-5:]
-    assert lines.splitlines() == [
-        "PLAYLIST_PLAYER_OVERLAY_ANCHOR=top-right",
-        "PLAYLIST_PLAYER_OVERLAY_MARGIN_Y=260",
-        "PLAYLIST_PLAYER_OVERLAY_FONT_SIZE=48",
-        'PLAYLIST_PLAYER_OVERLAY_FONT="Serif Italic"',
-        "PLAYLIST_PLAYER_OVERLAY_COLOR=#ffe066",
-    ]
+    panel_text, partners, overridden, reset_disabled, _shot = results[-5:]
+    # The panel says changes need no saving, and offers nothing that suggests they do.
+    assert "saved automatically and take effect immediately" in " ".join(panel_text.split())
+    assert "Copy" not in panel_text and "PLAYLIST_PLAYER_" not in panel_text
     assert partners == ["48", "#ffe066"]
     assert overridden == [True, False, True] and reset_disabled is False
     assert shot.stat().st_size > 10_000
@@ -164,14 +160,14 @@ def test_dropping_one_override_resetting_all_and_a_refused_value(daemon, tmp_pat
         {"eval": "t.el('overlay-reset').click()"},
         {"wait": "t.el('overlay-reset').disabled"},
         {"eval": "t.values('margin_x', 'fade_ms')"},
-        {"eval": "t.text('overlay-lines')"},
+        {"eval": "t.overridden('margin_x', 'lines', 'fade_ms', 'font')"},
     ]
     results = drive(daemon, tmp_path, steps)[len(OPEN) :]
     assert results[0] == ["75", "2", "0"]
     assert results[3] == ["1"]
     assert results[6] == ["Sans Bold"]
     assert results[-2] == ["0", "120"]
-    assert results[-1].startswith("Nothing is overridden")
+    assert results[-1] == [False, False, False, False]
     assert daemon.overlay.snapshot()["overrides"] == {}
 
 
@@ -369,17 +365,27 @@ def test_the_current_lyric_line_shows_how_far_through_it_playback_is(daemon, tmp
 def test_the_bar_moves_while_the_song_plays_and_stops_when_it_is_paused(daemon, tmp_path):
     queue = daemon.routes._library.queue_for(PLAYLIST_ID)
     daemon.player.load_queue(queue, paused=True)
-    daemon.player.position = 1.0
-    daemon.player.play()  # from here the page extrapolates the position itself
+    daemon.player.position = 1.0  # the line began 150 ms ago (the lead) and lasts 1.5 s
+    daemon.player._publish()
     read = "Number(document.querySelector('#lyrics li.current')?.dataset.progress ?? -1)"
+    # Playback is started from the page, once it is up: the line is only 1.5 s long, and
+    # a browser that was slow to start must not find it already over.
+    play = (
+        "fetch('/api/v1/player/play', {method: 'POST', body: '{}',"
+        " headers: {'Content-Type': 'application/json'}}).then((r) => r.ok)"
+    )
     results = drive(daemon, tmp_path, [
         {"wait": f"{read} > 0"},
-        {"eval": read},
+        {"eval": play},
+        {"wait": "document.getElementById('toggle').textContent === 'Pause'"},
+        {"eval": f"[{read}, performance.now()]"},
         {"eval": "new Promise((done) => setTimeout(done, 300))"},
-        {"eval": read},
+        {"eval": f"[{read}, performance.now()]"},
     ])  # fmt: skip
-    earlier, later = results[1], results[3]
-    assert later - earlier == pytest.approx(0.3 / 1.5, abs=0.08)  # 300 ms of a 1.5 s line
+    (earlier, earlier_ms), (later, later_ms) = results[3], results[5]
+    assert results[1] is True and later > earlier > 0
+    # The bar advanced by the time that passed, as a share of the line's 1.5 s.
+    assert later - earlier == pytest.approx((later_ms - earlier_ms) / 1500, abs=0.03)
 
     daemon.player.position = 1.6
     daemon.player.pause()

@@ -3,8 +3,9 @@
 //
 // The daemon owns every rule about what a setting may be and sends them with the
 // document (`rules`); this file only decides how each kind of setting is drawn. Values
-// set here are overrides on top of the configured ones, and the panel says which
-// settings are overridden and offers the lines that would make them the configuration.
+// set here are overrides on top of the configured ones. The daemon saves each one as it
+// is made, so there is nothing to save by hand; the panel shows which settings are
+// overridden and can put them back.
 
 // How each setting is shown. `slider` is the comfortable range for dragging; the number
 // box beside it accepts the whole range the daemon allows. A margin's slider depends on
@@ -81,7 +82,7 @@ export function initOverlayPanel({ getJson, postJson }) {
   const els = {
     open: $("overlay-open"), pane: $("overlay-pane"), close: $("overlay-close"),
     status: $("overlay-status"), preview: $("overlay-preview"), form: $("overlay-form"),
-    reset: $("overlay-reset"), copy: $("overlay-copy"), lines: $("overlay-lines"),
+    reset: $("overlay-reset"),
     note: $("overlay-note"),
   };
   const rows = new Map(); // key -> { row, inputs, drop }
@@ -217,10 +218,7 @@ export function initOverlayPanel({ getJson, postJson }) {
     const running = doc.clients > 0;
     els.status.textContent = running ? "overlay running" : "overlay not running";
     els.status.className = `pill ${running ? "on" : "off"}`;
-    els.lines.textContent = doc.env_lines.length
-      ? doc.env_lines.join("\n")
-      : "Nothing is overridden; the configured values are in use.";
-    els.reset.disabled = els.copy.disabled = !doc.env_lines.length;
+    els.reset.disabled = !Object.keys(doc.overrides).length;
   }
 
   function apply(next) {
@@ -274,17 +272,6 @@ export function initOverlayPanel({ getJson, postJson }) {
     pending = {};
     const result = await postJson("/overlay/reset", {});
     if (result.ok) apply(result.data);
-  });
-  els.copy.addEventListener("click", async () => {
-    const text = `${doc.env_lines.join("\n")}\n`;
-    try {
-      await navigator.clipboard.writeText(text);
-      els.note.textContent = "Copied. Paste the lines into your settings file, then restart.";
-    } catch {
-      // No clipboard access: select the lines so they can be copied by hand.
-      getSelection().selectAllChildren(els.lines);
-      els.note.textContent = "Select and copy the lines above.";
-    }
   });
 
   return {
