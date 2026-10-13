@@ -19,12 +19,14 @@ from urllib.parse import urlsplit
 
 from ..cache import CacheStore
 from ..config import Settings
+from ..overlay_settings import OverlaySettings
 from ..playback.base import Player
 from ..playback.mpv import MpvPlayer
 from ..playback.state import StateBus
 from . import sse
 from .library import Library
-from .routes import EVENTS_PATH, MAX_BODY_BYTES, Response, Routes
+from .overlay_config import OverlayConfig
+from .routes import EVENTS_PATH, MAX_BODY_BYTES, OVERLAY_CLIENT_HEADER, Response, Routes
 from .security import allowed_hosts, check_request
 
 # Sent with every response. No CORS header appears anywhere, on purpose.
@@ -53,7 +55,8 @@ class Daemon:
         log: bool = False,
     ) -> None:
         self.player = player
-        self.routes = Routes(Library(store), player)
+        self.overlay = OverlayConfig(OverlaySettings.from_settings(settings), store)
+        self.routes = Routes(Library(store), player, self.overlay)
         self.keepalive_s = keepalive_s
         self.stopping = threading.Event()
         self._streams = 0
@@ -127,16 +130,23 @@ class Daemon:
                     self.send_header(name, value)
                 self.send_header("X-Accel-Buffering", "no")
                 self.end_headers()
+                # An overlay says who it is, so the page can tell whether one is running.
+                is_overlay = self.headers.get(OVERLAY_CLIENT_HEADER) == "overlay"
                 with daemon._streams_lock:
                     daemon._streams += 1
+                if is_overlay:
+                    daemon.overlay.attach()
                 try:
                     sse.stream_states(
                         self.wfile,
                         daemon.player.bus,
                         daemon.stopping,
                         keepalive_s=daemon.keepalive_s,
+                        overlay=daemon.overlay,
                     )
                 finally:
+                    if is_overlay:
+                        daemon.overlay.detach()
                     with daemon._streams_lock:
                         daemon._streams -= 1
 
@@ -167,6 +177,7 @@ def runtime_dir() -> Path:
 def run(settings: Settings) -> int:
     """Run the daemon in the foreground until SIGINT or SIGTERM."""
     store = CacheStore(settings.cache_dir, settings.state_dir)
+    OverlaySettings.from_settings(settings)  # a bad overlay setting fails before mpv starts
     player = MpvPlayer(
         StateBus(),
         socket_path=runtime_dir() / f"mpv-{settings.port}.sock",
@@ -181,6 +192,9 @@ def run(settings: Settings) -> int:
         player.close()
         print(f"playlist_player: cannot listen on {settings.base_url}: {exc}", file=sys.stderr)
         return 1
+    except BaseException:
+        player.close()  # never leave mpv running behind a daemon that did not start
+        raise
 
     def stop(_signum: int, _frame: object) -> None:
         # shutdown() blocks until serve_forever returns, so it cannot run on this thread.

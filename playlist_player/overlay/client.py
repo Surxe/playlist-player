@@ -1,10 +1,11 @@
 """The overlay's link to the daemon: follow the event stream, fetch lyric lines.
 
-One thread. It connects to the event stream, feeds each snapshot to the model, and when
-the model says a track's lines are missing it fetches them over the REST API before
-reading on. If the daemon is not running, or goes away, the model is told it is
-disconnected (which hides the overlay) and the thread keeps retrying with a growing
-pause between attempts.
+One thread. It connects to the event stream, feeds each playback snapshot to the model,
+and when the model says a track's lines are missing it fetches them over the REST API
+before reading on. The same stream carries the overlay's own settings as ``overlay``
+events, which are handed to ``on_overlay`` as they arrive. If the daemon is not
+running, or goes away, the model is told it is disconnected (which hides the overlay)
+and the thread keeps retrying with a growing pause between attempts.
 """
 
 from __future__ import annotations
@@ -15,12 +16,15 @@ import json
 import socket
 import threading
 from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlsplit
 
 from ..models import LyricLine, PlaybackState
 from .presenter import OverlayModel
 
 EVENTS_PATH = "/api/v1/events"
+# Tells the daemon this stream is an overlay, so the page can say whether one is running.
+CLIENT_HEADER = {"X-Playlist-Player-Client": "overlay"}
 # The daemon sends a keepalive comment every 15 s; silence much longer than that means
 # the connection is dead even though nothing closed it.
 READ_TIMEOUT_S = 40.0
@@ -33,6 +37,7 @@ class DaemonClient:
         model: OverlayModel,
         *,
         on_change: Callable[[], None],
+        on_overlay: Callable[[dict[str, Any]], None] | None = None,
         reconnect_s: tuple[float, float] = (0.5, 5.0),
         read_timeout_s: float = READ_TIMEOUT_S,
     ) -> None:
@@ -41,6 +46,7 @@ class DaemonClient:
         self._port = parts.port or 80
         self._model = model
         self._on_change = on_change
+        self._on_overlay = on_overlay
         self._reconnect_first_s, self._reconnect_max_s = reconnect_s
         self._read_timeout_s = read_timeout_s
         self._stopping = threading.Event()
@@ -80,7 +86,9 @@ class DaemonClient:
             self._host, self._port, timeout=self._read_timeout_s
         )
         try:
-            connection.request("GET", EVENTS_PATH, headers={"Accept": "text/event-stream"})
+            connection.request(
+                "GET", EVENTS_PATH, headers={"Accept": "text/event-stream", **CLIENT_HEADER}
+            )
             self._socket = connection.sock
             response = connection.getresponse()
             if response.status != 200:
@@ -88,21 +96,32 @@ class DaemonClient:
             self._model.set_connected(True)
             self._on_change()
 
-            version = 0
+            versions = {"state": 0, "overlay": 0}
+            event = "message"
             data: list[str] = []
             for raw in response:
                 if self._stopping.is_set():
                     return
                 line = raw.decode("utf-8").rstrip("\r\n")
-                if line.startswith("data:"):
+                if line.startswith("event:"):
+                    event = line[6:].strip()
+                elif line.startswith("data:"):
                     data.append(line[5:].lstrip())
-                elif not line and data:
-                    state = PlaybackState.from_dict(json.loads("\n".join(data)))
-                    data = []
-                    if state.version <= version:
-                        continue  # stale or repeated
-                    version = state.version
-                    self._apply(state)
+                elif not line:
+                    name, payload = event, "\n".join(data)
+                    event, data = "message", []
+                    if not payload or name not in versions:
+                        continue  # a keepalive, or a kind of event this version ignores
+                    document = json.loads(payload)
+                    version = document.get("version") if isinstance(document, dict) else None
+                    if not isinstance(version, int) or version <= versions[name]:
+                        continue  # malformed, stale or repeated
+                    versions[name] = version
+                    if name == "state":
+                        self._apply(PlaybackState.from_dict(document))
+                    elif self._on_overlay is not None:
+                        self._on_overlay(document)
+                        self._on_change()
         finally:
             self._socket = None
             connection.close()

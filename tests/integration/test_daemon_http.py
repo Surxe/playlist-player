@@ -59,15 +59,19 @@ class Client:
 
 
 class EventStream:
-    """Reads an event stream on a thread and collects the events and comments it sees."""
+    """Reads an event stream on a thread and collects the events and comments it sees.
 
-    def __init__(self, daemon: Daemon) -> None:
+    ``events`` are the playback states; ``overlay`` are the overlay settings documents.
+    """
+
+    def __init__(self, daemon: Daemon, headers: dict[str, str] | None = None) -> None:
         self.events: list[dict] = []
+        self.overlay: list[dict] = []
         self.comments: list[str] = []
         self.headers = None
         self._seen = threading.Condition()
         self._connection = http.client.HTTPConnection("127.0.0.1", daemon.port, timeout=10)
-        self._connection.request("GET", "/api/v1/events")
+        self._connection.request("GET", "/api/v1/events", headers=headers or {})
         # Kept for close(): http.client hands the socket over to the response and
         # forgets it once a response has no Content-Length.
         self._socket = self._connection.sock
@@ -85,9 +89,12 @@ class EventStream:
                     block.append(line)
                     continue
                 with self._seen:
+                    kind = self.events
                     for entry in block:
-                        if entry.startswith("data: "):
-                            self.events.append(json.loads(entry[6:]))
+                        if entry == "event: overlay":
+                            kind = self.overlay
+                        elif entry.startswith("data: "):
+                            kind.append(json.loads(entry[6:]))
                         elif entry.startswith(":"):
                             self.comments.append(entry)
                     self._seen.notify_all()
@@ -249,6 +256,46 @@ def test_event_stream_sends_the_current_state_then_changes_then_keepalives(fake)
     wait_until(lambda: daemon.open_streams == 0)
 
 
+def test_event_stream_carries_the_overlay_settings_alongside_playback(fake):
+    daemon, player, client = fake
+    daemon.overlay.update({"margin_y": 300})
+    browser = EventStream(daemon)
+    try:
+        browser.wait(lambda: browser.overlay and browser.events)
+        assert browser.overlay[0]["overrides"] == {"margin_y": 300}
+        assert browser.overlay[0]["clients"] == 0  # a browser is not an overlay
+
+        status, body = client.json("POST", "/api/v1/overlay", {"anchor": "top"})
+        assert status == 200 and body["settings"]["anchor"] == "top"
+        browser.wait(lambda: browser.overlay[-1]["settings"]["anchor"] == "top")
+
+        overlay = EventStream(daemon, {"X-Playlist-Player-Client": "overlay"})
+        try:
+            browser.wait(lambda: browser.overlay[-1]["clients"] == 1)
+            # Playback events still arrive, and are not mistaken for settings.
+            client.json("POST", "/api/v1/player/volume", {"volume": 35})
+            overlay.wait(lambda: overlay.events and overlay.events[-1]["volume"] == 35)
+            assert all("volume" not in document for document in overlay.overlay)
+        finally:
+            overlay.close()
+        browser.wait(lambda: browser.overlay[-1]["clients"] == 0, timeout=5)
+    finally:
+        browser.close()
+
+
+def test_overlay_changes_are_refused_from_another_origin(fake):
+    daemon, player, client = fake
+    status, body = client.json(
+        "POST", "/api/v1/overlay", {"margin_y": 300}, headers={"Origin": "http://evil.example"}
+    )
+    assert status == 403
+    response, _ = client.request(
+        "POST", "/api/v1/overlay", b"margin_y=300", headers={"Content-Type": "text/plain"}
+    )
+    assert response.status == 415
+    assert daemon.overlay.snapshot()["overrides"] == {}
+
+
 def test_several_streams_each_get_every_event(fake):
     daemon, player, client = fake
     streams = [EventStream(daemon) for _ in range(3)]
@@ -379,3 +426,14 @@ def test_a_playlist_plays_end_to_end_driven_by_ctl(start, store, tmp_path_factor
     finally:
         player.close()
         shutil.rmtree(runtime, ignore_errors=True)
+
+
+def test_serve_refuses_a_bad_overlay_setting_before_starting_mpv(monkeypatch, capsys):
+    """The daemon holds the overlay's settings now, so it is the one to say they are wrong."""
+    started = []
+    monkeypatch.setattr(MpvPlayer, "start", lambda self: started.append(self))
+    monkeypatch.setenv("PLAYLIST_PLAYER_OVERLAY_COLOR", "red; }")
+    assert cli.main(["serve"]) == 1
+    error = capsys.readouterr().err
+    assert "PLAYLIST_PLAYER_OVERLAY_COLOR must be a colour" in error and "Traceback" not in error
+    assert started == []

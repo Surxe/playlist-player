@@ -3,6 +3,7 @@
 // position is extrapolated locally (see clock.js), so nothing here polls.
 
 import { currentIndex, formatTime, positionAt } from "./clock.js";
+import { initOverlayPanel } from "./overlay.js";
 
 const API = "/api/v1";
 // Show a line slightly before its timestamp; it reads better than exactly on it.
@@ -45,6 +46,24 @@ async function post(path, body = {}) {
   }
   return response.ok;
 }
+
+// Like post(), but hands back the answer: { ok, data } or { ok: false, error }.
+async function postJson(path, body = {}) {
+  try {
+    const response = await fetch(API + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok) return { ok: true, data };
+    return { ok: false, error: data.error ?? `HTTP ${response.status}` };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+const overlayPanel = initOverlayPanel({ getJson, postJson });
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -214,6 +233,7 @@ function tick() {
 function connect() {
   const events = new EventSource(`${API}/events`);
   events.addEventListener("state", (event) => applyState(JSON.parse(event.data)));
+  events.addEventListener("overlay", (event) => overlayPanel.apply(JSON.parse(event.data)));
   events.onopen = () => {
     els.connection.textContent = "connected";
     els.connection.className = "pill on";
@@ -224,6 +244,7 @@ function connect() {
     els.connection.textContent = "offline";
     els.connection.className = "pill off";
     if (state) state = { ...state, version: 0 };
+    overlayPanel.disconnected();
   };
 }
 
@@ -263,9 +284,12 @@ for (const button of document.querySelectorAll("[data-nudge]")) {
 els.offsetReset.addEventListener("click", () => setOffset(0));
 
 document.addEventListener("keydown", (event) => {
-  if (event.target instanceof HTMLSelectElement || event.ctrlKey || event.metaKey || event.altKey) {
-    return;
-  }
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  // Keys typed into a control belong to that control, not to the transport.
+  const target = event.target;
+  if (target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) return;
+  if (target instanceof HTMLInputElement && target.type !== "range") return;
+  if (target instanceof Element && target.closest("#overlay-pane")) return;
   const actions = {
     " ": () => els.toggle.click(),
     ArrowLeft: () => post("/player/seek", { delta_s: -SEEK_STEP_S }),

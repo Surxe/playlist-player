@@ -263,3 +263,105 @@ def test_the_overlay_follows_playback_on_the_overlay_layer(
     # mapped sample is taken before the first allocation).
     settled = first(lambda s: s["mapped"], base + 1.5)
     assert (width, height) == (settled["width"], settled["height"])
+
+
+def test_settings_changed_through_the_daemon_move_and_restyle_the_running_overlay(
+    compositor, store, tmp_path, monkeypatch
+):
+    """The remote-control page's path: nothing playing, a preview on, settings changing.
+
+    The window must move and resize where it stands. If it were unmapped and mapped
+    again for each change it would flicker under the user's hand while they position it.
+    """
+    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+    build_library(store)
+    daemon = Daemon(load_settings(), store, FakePlayer(), port=0, keepalive_s=0.5)
+    threading.Thread(target=daemon.serve_forever, daemon=True).start()
+
+    out = tmp_path / "probe.json"
+    probe = subprocess.Popen(
+        ["bash", str(KWIN), "run", sys.executable, str(PROBE), str(out), "10"],
+        cwd=tmp_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        env=child_env(
+            tmp_path, PORT=str(daemon.port), OVERLAY_ANCHOR="bottom-right",
+            OVERLAY_MARGIN_X="40", OVERLAY_MARGIN_Y="90", OVERLAY_MONITOR="Virtual-0",
+            OVERLAY_FADE_MS="0",
+        ),
+    )  # fmt: skip
+    marks: dict[str, float] = {}
+    stacks: dict[str, list[dict]] = {}
+
+    def step(name: str, change) -> None:
+        marks[name] = time.time()
+        change()
+        time.sleep(0.6)
+        stacks[name] = json.loads(kwin("windows", check=True).stdout)
+
+    try:
+        wait_until(lambda: daemon.overlay.snapshot()["clients"] == 1, timeout=15)
+        time.sleep(0.3)  # idle: samples that must show nothing
+        step("preview", lambda: daemon.overlay.preview(30))
+        step("corner", lambda: daemon.overlay.update(
+            {"anchor": "top-left", "margin_x": 60, "margin_y": 30, "font_size": 16}))  # fmt: skip
+        step("centre", lambda: daemon.overlay.update(
+            {"anchor": "center", "margin_x": 0, "margin_y": 200, "lines": 2}))  # fmt: skip
+        step("reset", daemon.overlay.reset)
+        marks["off"] = time.time()
+        daemon.overlay.preview(0)
+        time.sleep(0.4)
+    finally:
+        out.with_suffix(".stop").touch()
+        try:
+            _, stderr = probe.communicate(timeout=20)
+        except subprocess.TimeoutExpired:
+            probe.kill()
+            _, stderr = probe.communicate()
+        daemon.shutdown()
+    assert probe.returncode == 0, stderr[-800:]
+
+    samples = json.loads(out.read_text())["samples"]
+
+    def at(name: str) -> dict:
+        """The last sample before the step after ``name`` began."""
+        order = list(marks)
+        end = marks[order[order.index(name) + 1]]
+        return [s for s in samples if s["t"] < end][-1]
+
+    def geometry(name: str) -> tuple[int, int, int, int]:
+        ours = [w for w in stacks[name] if w["layer"] == KWIN_OVERLAY_LAYER]
+        assert len(ours) == 1, stacks[name]
+        return tuple(ours[0]["geometry"])
+
+    # Nothing before the preview; the sample line from then until it is switched off,
+    # without a single unmapped sample in between, through three reconfigurations.
+    assert not any(s["mapped"] for s in samples if s["t"] < marks["preview"])
+    shown = [s for s in samples if marks["preview"] + 0.25 <= s["t"] <= marks["off"]]
+    assert shown and all(s["mapped"] for s in shown)
+    assert {s["text"] for s in shown} == {"This is where the current lyric line will appear"}
+    hidden = next(s for s in samples if s["t"] >= marks["off"] and not s["mapped"])
+    assert hidden["t"] - marks["off"] < 0.15
+
+    # As started: bottom-right, by the configured margins.
+    x, y, width, height = geometry("preview")
+    assert (x + width, y + height) == (SCREEN[0] - 40, SCREEN[1] - 90)
+    assert at("preview")["anchors"] == ["bottom", "right"]
+
+    # Moved to the opposite corner and made smaller, in place.
+    cx, cy, cwidth, cheight = geometry("corner")
+    assert (cx, cy) == (60, 30)
+    assert cwidth < width and cheight < height
+    assert at("corner")["anchors"] == ["left", "top"]
+    assert at("corner")["margins"] == {"top": 30, "bottom": 0, "left": 60, "right": 0}
+
+    # Centred, pushed 200 px down, with the second line showing.
+    mx, my, mwidth, mheight = geometry("centre")
+    assert at("centre")["anchors"] == []
+    assert abs((mx + mwidth / 2) - SCREEN[0] / 2) <= 1
+    assert abs((my + mheight / 2) - SCREEN[1] / 2) <= 1
+    assert mheight > cheight + 400  # twice the shift is padded above the text
+    assert at("centre")["next_text"] == "and this is the line that follows it"
+
+    # Reset: exactly where and how it started.
+    assert geometry("reset") == (x, y, width, height)
+    assert at("reset")["next_text"] == ""

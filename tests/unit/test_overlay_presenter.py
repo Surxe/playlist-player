@@ -8,7 +8,15 @@ from playlist_player.errors import ConfigError
 from playlist_player.lyrics import line_times, parse_lrc
 from playlist_player.models import LyricsKind, PlaybackState, PlayerStatus
 from playlist_player.overlay.clock import now_epoch_ms, position_ms
-from playlist_player.overlay.presenter import HIDDEN, OverlayModel, OverlayView, present
+from playlist_player.overlay.presenter import (
+    HIDDEN,
+    SAMPLE_NEXT,
+    SAMPLE_TEXT,
+    OverlayModel,
+    OverlayView,
+    present,
+    sample_view,
+)
 from playlist_player.overlay.render.base import Placement, Style
 
 LINES = parse_lrc(
@@ -120,6 +128,26 @@ def test_the_next_line_is_offered_only_when_asked_for():
     assert view(playing(45.0), show_next=True).next_text == ""  # nothing follows
 
 
+def test_a_preview_shows_the_sample_line_whatever_is_playing_until_it_ends():
+    sample = OverlayView(True, SAMPLE_TEXT, "", ticking=True)
+    assert view(None, preview_until_ms=T0 + 5000) == sample  # nothing loaded at all
+    assert view(playing(12.0, paused=True), preview_until_ms=T0 + 5000) == sample
+    assert view(playing(12.0), preview_until_ms=T0 + 5000) == sample  # over a real line
+    assert view(None, preview_until_ms=T0 + 5000, show_next=True).next_text == SAMPLE_NEXT
+    # It ends on time, by the clock alone, and what was true underneath shows again.
+    assert view(None, now_ms=T0 + 5000, preview_until_ms=T0 + 5000) == HIDDEN
+    underneath = view(playing(12.0), now_ms=T0 + 5000)
+    assert underneath.visible and underneath.text != SAMPLE_TEXT
+    assert view(playing(12.0), now_ms=T0 + 5000, preview_until_ms=T0 + 5000) == underneath
+    # Without the connection nothing is known, a preview included.
+    assert view(None, connected=False, preview_until_ms=T0 + 5000) == HIDDEN
+
+
+def test_the_demo_view_is_the_same_sample_and_does_not_tick():
+    assert sample_view() == OverlayView(True, SAMPLE_TEXT, "", ticking=False)
+    assert sample_view(show_next=True).next_text == SAMPLE_NEXT
+
+
 def test_clock_units():
     assert position_ms(playing(12.5), T0) == 12_500
     assert position_ms(playing(12.5), T0 + 250) == 12_750
@@ -177,6 +205,28 @@ def test_disconnecting_forgets_the_state():
     assert model.view(T0) == HIDDEN
     model.set_state(playing(12.0, version=1))
     assert model.view(T0).visible
+
+
+def test_the_model_can_be_reconfigured_while_it_runs():
+    model = OverlayModel(lead_ms=0, show_next=False)
+    model.set_connected(True)
+    model.set_state(playing(9.9))
+    model.set_lyrics("T1", LINES)
+    before = model.view(T0)
+    model.configure(lead_ms=200, show_next=True)
+    after = model.view(T0)
+    assert (before.text, before.next_text) != (after.text, after.next_text)
+    assert after.next_text  # the following line is offered now
+
+
+def test_a_preview_ends_with_the_connection():
+    model = OverlayModel()
+    model.set_connected(True)
+    model.set_preview_until(T0 + 5000)
+    assert model.view(T0).text == SAMPLE_TEXT
+    model.set_connected(False)
+    model.set_connected(True)  # back, but the daemon has not asked for a preview again
+    assert model.view(T0) == HIDDEN
 
 
 def test_model_passes_lead_and_next_line_settings():

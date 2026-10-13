@@ -19,13 +19,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..errors import InvalidIdError, NotInCacheError, PlaybackError
+from ..errors import CacheError, InvalidIdError, NotInCacheError, PlaybackError
+from ..overlay_settings import OverlaySettingError
 from ..playback.base import Player
 from .library import Library
+from .overlay_config import MAX_PREVIEW_S, OverlayConfig
 from .security import JSON_TYPE
 
 API = "/api/v1"
 EVENTS_PATH = f"{API}/events"
+# Sent by the overlay when it opens the event stream.
+OVERLAY_CLIENT_HEADER = "X-Playlist-Player-Client"
 MAX_BODY_BYTES = 64 * 1024
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -34,6 +38,7 @@ _STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/static/clock.js": ("clock.js", "text/javascript; charset=utf-8"),
+    "/static/overlay.js": ("overlay.js", "text/javascript; charset=utf-8"),
     "/static/style.css": ("style.css", "text/css; charset=utf-8"),
 }
 _IMAGE_TYPES = (
@@ -78,9 +83,12 @@ Handler = Callable[..., Response]
 
 
 class Routes:
-    def __init__(self, library: Library, player: Player) -> None:
+    def __init__(
+        self, library: Library, player: Player, overlay: OverlayConfig | None = None
+    ) -> None:
         self._library = library
         self._player = player
+        self._overlay = overlay
         segment = r"([^/]+)"
         self._table: list[tuple[str, re.Pattern[str], Handler]] = [
             ("GET", re.compile(rf"{API}/playlists"), self._playlists),
@@ -96,6 +104,13 @@ class Routes:
             ("POST", re.compile(rf"{API}/player/volume"), self._volume),
             ("POST", re.compile(rf"{API}/tracks/{segment}/offset"), self._offset),
         ]
+        if overlay is not None:
+            self._table += [
+                ("GET", re.compile(rf"{API}/overlay"), self._overlay_get),
+                ("POST", re.compile(rf"{API}/overlay"), self._overlay_update),
+                ("POST", re.compile(rf"{API}/overlay/reset"), self._overlay_reset),
+                ("POST", re.compile(rf"{API}/overlay/preview"), self._overlay_preview),
+            ]
 
     def dispatch(self, method: str, path: str, body: bytes = b"") -> Response:
         """Answer one request. Never raises: every failure becomes an error response."""
@@ -123,6 +138,10 @@ class Routes:
             return Response.error(400, str(exc))
         except NotInCacheError as exc:
             return Response.error(404, str(exc))
+        except OverlaySettingError as exc:
+            return Response.error(400, str(exc))
+        except (CacheError, OSError) as exc:
+            return Response.error(500, f"could not read or write the cache: {exc}")
         except PlaybackError as exc:
             return Response.error(503, f"player unavailable: {exc}")
 
@@ -219,3 +238,25 @@ class Routes:
         stored = self._library.set_offset(track_id, offset)
         self._player.set_offset(track_id, stored)
         return Response.json({"ok": True, "track_id": track_id, "offset_ms": stored})
+
+    # -------------------------------- overlay ------------------------------- #
+
+    def _overlay_get(self) -> Response:
+        assert self._overlay is not None
+        return Response.json(self._overlay.describe())
+
+    def _overlay_update(self, body: dict[str, Any]) -> Response:
+        """Set overrides from ``{setting: value}``; a ``null`` value drops that override."""
+        assert self._overlay is not None
+        return Response.json(self._overlay.update(body))
+
+    def _overlay_reset(self, _body: dict[str, Any]) -> Response:
+        assert self._overlay is not None
+        return Response.json(self._overlay.reset())
+
+    def _overlay_preview(self, body: dict[str, Any]) -> Response:
+        assert self._overlay is not None
+        seconds = _number(body, "seconds")
+        if not 0 <= seconds <= MAX_PREVIEW_S:
+            raise ApiError(400, f"seconds must be between 0 and {MAX_PREVIEW_S:g}")
+        return Response.json(self._overlay.preview(seconds))

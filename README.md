@@ -121,7 +121,9 @@ offset buttons shift a track's lyrics earlier or later and the value is remember
 
 The daemon listens on loopback only, refuses requests that do not name its own address
 or that come from another web origin, takes playlist and track IDs but never file
-paths, and has no endpoint that downloads anything. mpv is started with no config file,
+paths, and has no endpoint that downloads anything. The only things a request can
+change are playback, a track's lyric offset and the overlay's appearance, each checked
+against a fixed set of allowed values. mpv is started with no config file,
 no scripts and no network access.
 
 ## The overlay
@@ -137,10 +139,23 @@ screen only while a line is due: it is removed (not just made transparent) when 
 pauses, between lines, for tracks without synced lyrics, and whenever the daemon is not
 running. It is a client of the daemon's API and nothing more.
 
-Position it with `--demo`: set `PLAYLIST_PLAYER_OVERLAY_ANCHOR` (an edge, a corner or
-`center`), the two margins, and optionally `PLAYLIST_PLAYER_OVERLAY_MONITOR`, then run it
-again. Font, size, colours, a second (next) line, how early a line appears and the fade
-are in the Configuration section below.
+### Positioning and styling it
+
+Open the page and press **Overlay**. The panel changes a running overlay as you move
+the controls: the edge, corner or `center` it is anchored to, the two margins, the
+monitor, font, size, colours, a second (next) line, how early a line appears and the
+fade. **Show a sample line** puts a stand-in line on screen so you can do this with
+nothing playing; it goes away by itself when the panel or the tab is closed.
+
+What the panel sets is an override on top of the configured value (the Configuration
+section below: a flag, an environment variable or `.env`). Overrides are kept in
+`state/overlay.json` and survive restarts. A highlighted row is overridden, the `x`
+beside it puts that one setting back, and **Reset** puts them all back. **Copy as
+settings lines** gives the overrides as `NAME=value` lines for your settings file; once
+a value is configured there, its override drops away and the file is what counts again.
+
+Without the page, `overlay --demo` shows a fixed line for trying flags by hand, such as
+`overlay --demo --overlay-anchor top-right --overlay-margin-y 40`.
 
 If a game ignores it, run the game in borderless-window mode rather than exclusive
 fullscreen.
@@ -150,7 +165,7 @@ fullscreen.
 | Path | Holds |
 |------|-------|
 | `cache/` | Everything fetched: track lists, audio, lyrics, covers. Safe to delete; `sync` rebuilds it. |
-| `state/` | Per-track corrections you made: lyric offsets and audio pins. Not rebuilt. |
+| `state/` | What you changed by hand: lyric offsets, audio pins, and overlay settings set from the page. Not rebuilt. |
 
 Both are gitignored and sit in the repo by default; `PLAYLIST_PLAYER_CACHE_DIR` and
 `PLAYLIST_PLAYER_STATE_DIR` move them. Files get ordinary permissions, whatever your
@@ -177,7 +192,8 @@ scripts/headless-kwin.sh run <command>     # run something in a display-less KWi
 Tests never reach a real service: every third-party API is replaced by a loopback
 server, and a guard fails any test that connects elsewhere. The overlay tests start a
 headless KWin themselves and are skipped where KWin or the layer-shell bindings are
-missing. `overlay --demo --snapshot out.png` renders one frame to a PNG (over a half
+missing. The page's settings panel is tested in a headless Chrome, driven by node over
+the DevTools protocol, and skipped where either is missing. `overlay --demo --snapshot out.png` renders one frame to a PNG (over a half
 dark, half light backdrop) for a look without a graphical session.
 
 Everything under `cache/` is third-party content (audio, lyrics, track lists). Tests use

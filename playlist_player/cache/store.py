@@ -156,6 +156,11 @@ class CacheStore:
     def track_state(self, track_id: str) -> Path:
         return self.state_dir / "tracks" / f"{validate_id(track_id)}.json"
 
+    @property
+    def overlay_json(self) -> Path:
+        """Overlay settings changed from the remote-control page."""
+        return self.state_dir / "overlay.json"
+
     # ---------------------------------- I/O ---------------------------------- #
     def write_bytes(self, path: Path, data: bytes) -> None:
         self._require_inside(path)
