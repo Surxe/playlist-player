@@ -57,11 +57,21 @@ class MpvStateReducer:
         self._ended = False
         self._error = None
 
+    def replace_queue(self, queue: PlayQueue) -> None:
+        """The same tracks in a new order. Nothing about playback itself has changed."""
+        self.queue = queue
+
     def set_fatal(self, message: str | None) -> None:
-        """Mark the player as dead (or alive again). Resets what mpv had told us."""
+        """Mark the player as dead (or alive again). Resets what mpv had told us.
+
+        The volume is kept. It is the listener's setting, not a fact about that one mpv
+        process: the process that replaces it is started at the same volume, and a
+        snapshot in between must not report (or lead anything to save) the default.
+        """
         self._fatal = message
         if message is not None:
-            self._props = {"pause": False, "idle-active": True, "core-idle": True}
+            kept = {"volume": self._props["volume"]} if "volume" in self._props else {}
+            self._props = {"pause": False, "idle-active": True, "core-idle": True, **kept}
             self._loading = False
             self._ended = False
 

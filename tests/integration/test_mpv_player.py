@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from playlist_player.errors import PlaybackError
 from playlist_player.models import LyricsKind, PlayerStatus
 from playlist_player.playback.mpv import MpvPlayer
 from playlist_player.playback.queue import PlayQueue, QueueEntry
@@ -343,3 +344,150 @@ def test_mpris_plugin_loads_and_its_playpause_reaches_our_state(make_player, ton
     finally:
         bus_process.terminate()
         bus_process.wait(timeout=5)
+
+
+def test_a_resumed_song_starts_paused_at_its_position_and_at_the_saved_volume(make_player, tones):
+    """What a restart does: volume first, then the song loaded paused and seeked to where it was."""
+    player, log = make_player()
+    player.set_volume(40)
+    player.load_queue(queue_of(tones, [30, 30, 30]), paused=True, position_s=12.5)
+    state = log.wait_for(paused_at("T0", 12.5), timeout=8)
+    time.sleep(0.4)
+    state = log.bus.current
+    assert state.status is PlayerStatus.PAUSED and state.track_id == "T0"
+    assert state.position_s == pytest.approx(12.5, abs=0.1)
+    assert state.volume == pytest.approx(40, abs=0.5)
+
+
+def test_a_resume_position_is_not_applied_to_a_later_track(make_player, tones):
+    player, log = make_player()
+    player.load_queue(queue_of(tones, [30, 30]), paused=False, position_s=20)
+    log.wait_for(playing("T0"), timeout=8)
+    player.next()
+    state = log.wait_for(playing("T1"), after=0, timeout=8)
+    time.sleep(0.5)
+    assert state.position_s < 3  # started from the beginning, not from 20 s
+
+
+def paused_at(track_id: str, position: float):
+    def check(state):
+        return (
+            state.track_id == track_id
+            and state.status is PlayerStatus.PAUSED
+            and state.position_s >= position - 0.2
+        )
+
+    return check
+
+
+def test_a_socket_path_too_long_for_the_system_is_one_clear_error(tmp_path):
+    deep = tmp_path / ("d" * 110) / "mpv.sock"
+    player = MpvPlayer(StateBus(), socket_path=deep, audio_output="null")
+    with pytest.raises(PlaybackError, match="socket path is too long"):
+        player.start()
+    assert not deep.parent.exists()  # refused before anything was created or started
+
+
+def reordered(queue: PlayQueue, ids: list[str]) -> PlayQueue:
+    by_id = {entry.track_id: entry for entry in queue.entries}
+    return PlayQueue([by_id[track_id] for track_id in ids], playlist_id=queue.playlist_id)
+
+
+def test_reordering_the_queue_does_not_interrupt_the_song_that_is_playing(make_player, tones):
+    player, log = make_player(heartbeat_s=0.2)
+    queue = queue_of(tones, [30, 30, 30, 30, 30])
+    player.load_queue(queue, position_s=10)
+    log.wait_for(lambda s: s.track_id == "T0" and s.position_s >= 9.5 and playing()(s), timeout=8)
+    time.sleep(0.6)
+    before = log.bus.current
+
+    player.reorder(reordered(queue, ["T3", "T0", "T4", "T2", "T1"]))
+    time.sleep(0.8)
+    after = log.bus.current
+    # The same song, still playing, and the clock ran straight through the change.
+    assert (after.track_id, after.status) == ("T0", PlayerStatus.PLAYING)
+    assert after.queue_index == 1 and after.queue_length == 5
+    ran = (after.captured_at_epoch_ms - before.captured_at_epoch_ms) / 1000
+    assert after.position_s - before.position_s == pytest.approx(ran, abs=0.15)
+    between = [s for s in log.states if before.version < s.version <= after.version]
+    assert all(s.track_id == "T0" for s in between)
+    assert not any(s.status is PlayerStatus.LOADING for s in between)
+
+    # What follows is the new order, both ways.
+    player.next()
+    state = log.wait_for(playing("T4"), after=after.version, timeout=8)
+    player.next()
+    state = log.wait_for(playing("T2"), after=state.version, timeout=8)
+    player.prev()
+    state = log.wait_for(playing("T4"), after=state.version, timeout=8)
+    player.prev()
+    state = log.wait_for(playing("T0"), after=state.version, timeout=8)
+    player.prev()
+    log.wait_for(playing("T3"), after=state.version, timeout=8)
+
+
+def test_reordering_while_paused_or_stopped_keeps_the_place(make_player, tones):
+    player, log = make_player()
+    queue = queue_of(tones, [30, 30, 30])
+    player.load_queue(queue, paused=True, position_s=7)
+    log.wait_for(paused_at("T0", 7), timeout=8)
+    player.reorder(reordered(queue, ["T2", "T1", "T0"]))
+    time.sleep(0.6)
+    state = log.bus.current
+    assert (state.track_id, state.status, state.queue_index) == ("T0", PlayerStatus.PAUSED, 2)
+    assert state.position_s == pytest.approx(7, abs=0.1)
+
+    player.stop()
+    log.wait_for(lambda s: s.status is PlayerStatus.IDLE, after=state.version, timeout=8)
+    player.reorder(reordered(queue, ["T1", "T2", "T0"]))
+    player.play()  # a stopped queue starts again from its first track
+    log.wait_for(playing("T1"), after=state.version, timeout=8)
+
+
+def test_reordering_to_tracks_the_player_does_not_hold_loads_them_instead(make_player, tones):
+    player, log = make_player()
+    player.load_queue(queue_of(tones, [30, 30]))
+    state = log.wait_for(playing("T0"), timeout=8)
+    other = queue_of(tones, [30, 30, 30])
+    player.reorder(reordered(other, ["T2", "T0", "T1"]))
+    state = log.wait_for(lambda s: s.queue_length == 3 and s.track_id == "T0", timeout=8)
+    assert state.queue_index == 1
+
+
+def test_a_restarted_mpv_keeps_the_volume_and_never_reports_the_default(make_player, tones):
+    player, log = make_player()
+    player.set_volume(40)
+    player.load_queue(queue_of(tones, [5]))
+    started = log.wait_for(lambda s: playing("T0")(s) and s.volume == 40)
+    first_pid = player._process.pid
+
+    os.kill(first_pid, signal.SIGKILL)
+    error = log.wait_for(lambda s: s.status is PlayerStatus.ERROR, after=started.version)
+    recovered = log.wait_for(lambda s: s.status is PlayerStatus.IDLE, after=error.version)
+    assert player._process.pid != first_pid
+    assert "--volume=40" in player.command_line()
+    later = [s.volume for s in log.states if s.version >= error.version]
+    assert set(later) == {40.0}, later
+
+    player.load_queue(queue_of(tones, [5]))
+    assert log.wait_for(playing("T0"), after=recovered.version).volume == 40
+
+
+def test_a_volume_changed_from_outside_is_the_one_a_restart_keeps(make_player, tones):
+    """The media keys change the volume inside mpv; that is still the listener's setting."""
+    player, log = make_player()
+    player.load_queue(queue_of(tones, [5]))
+    started = log.wait_for(playing("T0"))
+    player._command("set_property", "volume", 55)  # not through set_volume
+    log.wait_for(lambda s: s.volume == 55, after=started.version)
+    os.kill(player._process.pid, signal.SIGKILL)
+    log.wait_for(lambda s: s.status is PlayerStatus.IDLE and s.volume == 55, after=started.version)
+    assert "--volume=55" in player.command_line()
+
+
+def test_mpv_runs_in_its_own_process_group(make_player):
+    """A Ctrl-C in the terminal goes to our group; mpv must not be in it."""
+    player, _ = make_player()
+    assert os.getpgid(player._process.pid) == player._process.pid
+    assert os.getpgid(player._process.pid) != os.getpgid(0)
+    assert not any(arg.startswith("--volume") for arg in player.command_line())  # none set yet

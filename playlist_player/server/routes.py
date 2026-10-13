@@ -25,6 +25,7 @@ from ..playback.base import Player
 from .library import Library
 from .overlay_config import MAX_PREVIEW_S, OverlayConfig
 from .security import JSON_TYPE
+from .session import PlaybackSession
 
 API = "/api/v1"
 EVENTS_PATH = f"{API}/events"
@@ -84,11 +85,21 @@ Handler = Callable[..., Response]
 
 class Routes:
     def __init__(
-        self, library: Library, player: Player, overlay: OverlayConfig | None = None
+        self,
+        library: Library,
+        player: Player,
+        session: PlaybackSession,
+        overlay: OverlayConfig | None = None,
     ) -> None:
         self._library = library
         self._player = player
+        self._session = session
         self._overlay = overlay
+        # Read once, here: the page must match the code that answers it. Reading on each
+        # request would hand out a newer page than this process after an upgrade in place.
+        self._static = {
+            path: (_STATIC_DIR / name).read_bytes() for path, (name, _type) in _STATIC.items()
+        }
         segment = r"([^/]+)"
         self._table: list[tuple[str, re.Pattern[str], Handler]] = [
             ("GET", re.compile(rf"{API}/playlists"), self._playlists),
@@ -103,6 +114,9 @@ class Routes:
             ("POST", re.compile(rf"{API}/player/seek"), self._seek),
             ("POST", re.compile(rf"{API}/player/volume"), self._volume),
             ("POST", re.compile(rf"{API}/tracks/{segment}/offset"), self._offset),
+            ("GET", re.compile(rf"{API}/session"), self._session_get),
+            ("POST", re.compile(rf"{API}/playlists/{segment}/shuffle"), self._shuffle),
+            ("POST", re.compile(rf"{API}/playlists/{segment}/unshuffle"), self._unshuffle),
         ]
         if overlay is not None:
             self._table += [
@@ -116,8 +130,7 @@ class Routes:
         """Answer one request. Never raises: every failure becomes an error response."""
         try:
             if method == "GET" and path in _STATIC:
-                name, content_type = _STATIC[path]
-                return Response(200, (_STATIC_DIR / name).read_bytes(), content_type)
+                return Response(200, self._static[path], _STATIC[path][1])
             allowed = set()
             for route_method, pattern, handler in self._table:
                 match = pattern.fullmatch(path)
@@ -171,7 +184,7 @@ class Routes:
         return Response.json({"playlists": self._library.playlists()})
 
     def _playlist(self, playlist_id: str) -> Response:
-        return Response.json(self._library.playlist(playlist_id))
+        return Response.json(self._session.arranged(self._library.playlist(playlist_id)))
 
     def _playlist_cover(self, playlist_id: str) -> Response:
         return self._image(self._library.playlist_cover(playlist_id))
@@ -197,14 +210,11 @@ class Routes:
     def _load(self, body: dict[str, Any]) -> Response:
         playlist_id = body.get("playlist_id")
         start = body.get("start_track_id")
-        shuffle = body.get("shuffle", False)
         if not isinstance(playlist_id, str):
             raise ApiError(400, "playlist_id is required")
         if start is not None and not isinstance(start, str):
             raise ApiError(400, "start_track_id must be a track ID")
-        if not isinstance(shuffle, bool):
-            raise ApiError(400, "shuffle must be true or false")
-        queue = self._library.queue_for(playlist_id, start_track_id=start, shuffle=shuffle)
+        queue = self._session.queue_for(playlist_id, start_track_id=start)
         self._player.load_queue(queue)
         return Response.json({"ok": True, "queue_length": len(queue)})
 
@@ -260,3 +270,18 @@ class Routes:
         if not 0 <= seconds <= MAX_PREVIEW_S:
             raise ApiError(400, f"seconds must be between 0 and {MAX_PREVIEW_S:g}")
         return Response.json(self._overlay.preview(seconds))
+
+    # ------------------------------- session ------------------------------- #
+
+    def _session_get(self) -> Response:
+        return Response.json(self._session.document())
+
+    def _shuffle(self, playlist_id: str, _body: dict[str, Any]) -> Response:
+        """Put a playlist in a new random order, which it keeps."""
+        self._session.shuffle(playlist_id)
+        return Response.json({"ok": True, "shuffled": True})
+
+    def _unshuffle(self, playlist_id: str, _body: dict[str, Any]) -> Response:
+        """Put a playlist back in its own order."""
+        self._session.restore(playlist_id)
+        return Response.json({"ok": True, "shuffled": False})

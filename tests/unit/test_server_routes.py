@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 
 import pytest
 
@@ -14,6 +15,7 @@ from playlist_player.server.library import Library
 from playlist_player.server.overlay_config import OverlayConfig
 from playlist_player.server.routes import API, Routes
 from playlist_player.server.security import allowed_hosts, check_request
+from playlist_player.server.session import PlaybackSession
 from tests.support.library import JPEG, PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer
 
@@ -26,8 +28,10 @@ def player():
 @pytest.fixture
 def routes(store, player):
     build_library(store)
+    library = Library(store)
+    session = PlaybackSession(store, library, player, rng=random.Random(4))
     overlay = OverlayConfig(OverlaySettings.from_settings(load_settings()), store)
-    return Routes(Library(store), player, overlay)
+    return Routes(library, player, session, overlay)
 
 
 def get(routes, path):
@@ -150,16 +154,70 @@ def test_load_queues_only_playable_tracks(routes, player):
     assert player.queue.entry_at(3).lyrics_kind.value == "plain"
 
 
-def test_load_can_start_at_a_track_and_shuffle(routes, player):
+def test_load_can_start_at_a_track(routes, player):
     post(routes, "/player/load", {"playlist_id": PLAYLIST_ID, "start_track_id": "TRK0002"})
-    assert player.calls[-1][2] == 2
-    post(
-        routes,
-        "/player/load",
-        {"playlist_id": PLAYLIST_ID, "start_track_id": "TRK0002", "shuffle": True},
-    )
-    order = player.calls[-1][1]
-    assert order[0] == "TRK0002" and sorted(order) == [f"TRK000{i}" for i in range(4)]
+    assert player.calls[-1] == ("load_queue", ["TRK0000", "TRK0001", "TRK0002", "TRK0003"], 2)
+
+
+def test_shuffle_gives_the_playlist_a_new_order_that_it_keeps(routes, player, store):
+    response, body = post(routes, f"/playlists/{PLAYLIST_ID}/shuffle")
+    assert (response.status, body) == (200, {"ok": True, "shuffled": True})
+    _, described = get(routes, f"/playlists/{PLAYLIST_ID}")
+    order = [track["id"] for track in described["tracks"]]
+    assert described["shuffled"] is True
+    assert order[-1] == "TRK0004" and sorted(order[:4]) == [f"TRK000{i}" for i in range(4)]
+    assert order[:4] != [f"TRK000{i}" for i in range(4)]
+    assert json.loads(store.session_json.read_text())["orders"][PLAYLIST_ID] == order[:4]
+
+    # Loading plays that order, starting where the chosen track falls in it.
+    post(routes, "/player/load", {"playlist_id": PLAYLIST_ID, "start_track_id": "TRK0002"})
+    assert player.calls[-1] == ("load_queue", order[:4], order.index("TRK0002"))
+
+    # Shuffling again while it plays rearranges the queue around the current song.
+    post(routes, f"/playlists/{PLAYLIST_ID}/shuffle")
+    assert player.calls[-1][0] == "reorder" and player.calls[-1][1][0] == "TRK0002"
+    assert player.calls[-1][1] != order[:4]
+
+
+def test_unshuffle_puts_the_playlist_back_in_its_own_order(routes, player):
+    post(routes, f"/playlists/{PLAYLIST_ID}/shuffle")
+    response, body = post(routes, f"/playlists/{PLAYLIST_ID}/unshuffle")
+    assert (response.status, body) == (200, {"ok": True, "shuffled": False})
+    _, described = get(routes, f"/playlists/{PLAYLIST_ID}")
+    assert described["shuffled"] is False
+    assert [track["id"] for track in described["tracks"]] == [f"TRK000{i}" for i in range(5)]
+
+
+def test_shuffle_refuses_what_it_cannot_shuffle(routes, store):
+    assert post(routes, "/playlists/NotCached/shuffle")[0].status == 404
+    assert post(routes, "/playlists/..%2Fetc/shuffle")[0].status == 400
+    assert post(routes, "/playlists/NotCached/unshuffle")[0].status == 404
+    assert routes.dispatch("GET", API + f"/playlists/{PLAYLIST_ID}/shuffle").status == 405
+    assert not store.session_json.exists()
+
+
+def test_the_session_document_says_what_would_be_resumed(routes, player):
+    assert get(routes, "/session")[1] == {
+        "playlist_id": None, "track_id": None, "position_s": 0.0, "volume": None,
+    }  # fmt: skip
+    post(routes, "/player/load", {"playlist_id": PLAYLIST_ID})
+    assert get(routes, "/session")[1]["playlist_id"] == PLAYLIST_ID
+
+
+def test_the_page_is_the_one_this_process_started_with(routes, monkeypatch, tmp_path):
+    """An upgrade in place must not hand a running daemon's clients a newer page.
+
+    The newer page would call endpoints this process does not have.
+    """
+    from playlist_player.server import routes as routes_module
+
+    before = routes.dispatch("GET", "/static/app.js").body
+    replaced = tmp_path / "static"
+    replaced.mkdir()
+    for name in ("index.html", "app.js", "clock.js", "overlay.js", "style.css"):
+        (replaced / name).write_text("// a later version")
+    monkeypatch.setattr(routes_module, "_STATIC_DIR", replaced)
+    assert routes.dispatch("GET", "/static/app.js").body == before
 
 
 @pytest.mark.parametrize(
@@ -167,7 +225,6 @@ def test_load_can_start_at_a_track_and_shuffle(routes, player):
     [
         ({}, 400),
         ({"playlist_id": 7}, 400),
-        ({"playlist_id": PLAYLIST_ID, "shuffle": "yes"}, 400),
         ({"playlist_id": PLAYLIST_ID, "start_track_id": 3}, 400),
         ({"playlist_id": "NotCached"}, 404),
         ({"playlist_id": "../../etc"}, 400),
@@ -435,5 +492,6 @@ def test_overlay_endpoints_refuse_other_methods_and_report_a_failed_save(
 
 
 def test_without_an_overlay_store_the_endpoints_do_not_exist(store, player):
-    bare = Routes(Library(store), player)
+    library = Library(store)
+    bare = Routes(library, player, PlaybackSession(store, library, player))
     assert bare.dispatch("GET", API + "/overlay").status == 404

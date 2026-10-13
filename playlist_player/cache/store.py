@@ -157,6 +157,11 @@ class CacheStore:
         return self.state_dir / "tracks" / f"{validate_id(track_id)}.json"
 
     @property
+    def session_json(self) -> Path:
+        """What the daemon resumes after a restart: shuffle, song, position and volume."""
+        return self.state_dir / "session.json"
+
+    @property
     def overlay_json(self) -> Path:
         """Overlay settings changed from the remote-control page."""
         return self.state_dir / "overlay.json"

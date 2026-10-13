@@ -90,9 +90,19 @@ class FakePlayer:
             raise self.fail_with
         self.calls.append(call)
 
-    def load_queue(self, queue, *, paused: bool = False) -> None:
+    def load_queue(self, queue, *, paused: bool = False, position_s=None) -> None:
         self._record("load_queue", [e.track_id for e in queue.entries], queue.start_index)
-        self.queue, self.index, self.paused, self.position = queue, queue.start_index, paused, 0.0
+        self.queue, self.index, self.paused = queue, queue.start_index, paused
+        self.position = position_s or 0.0
+        self.loaded_at = self.position
+        self._publish()
+
+    def reorder(self, queue) -> None:
+        self._record("reorder", [e.track_id for e in queue.entries])
+        current = self.queue.entry_at(self.index)
+        self.queue = queue
+        if current is not None:
+            self.index = queue.index_of(current.track_id)
         self._publish()
 
     def play(self) -> None:

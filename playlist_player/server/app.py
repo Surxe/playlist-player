@@ -28,6 +28,7 @@ from .library import Library
 from .overlay_config import OverlayConfig
 from .routes import EVENTS_PATH, MAX_BODY_BYTES, OVERLAY_CLIENT_HEADER, Response, Routes
 from .security import allowed_hosts, check_request
+from .session import PlaybackSession
 
 # Sent with every response. No CORS header appears anywhere, on purpose.
 _SECURITY_HEADERS = {
@@ -56,7 +57,9 @@ class Daemon:
     ) -> None:
         self.player = player
         self.overlay = OverlayConfig(OverlaySettings.from_settings(settings), store)
-        self.routes = Routes(Library(store), player, self.overlay)
+        library = Library(store)
+        self.session = PlaybackSession(store, library, player)
+        self.routes = Routes(library, player, self.session, self.overlay)
         self.keepalive_s = keepalive_s
         self.stopping = threading.Event()
         self._streams = 0
@@ -86,6 +89,7 @@ class Daemon:
         self.stopping.set()
         self._httpd.shutdown()
         self._httpd.server_close()
+        self.session.flush()
 
     def _handler_class(self) -> type[BaseHTTPRequestHandler]:
         daemon = self
@@ -195,13 +199,16 @@ def run(settings: Settings) -> int:
     except BaseException:
         player.close()  # never leave mpv running behind a daemon that did not start
         raise
+    daemon.session.resume()
 
     def stop(_signum: int, _frame: object) -> None:
         # shutdown() blocks until serve_forever returns, so it cannot run on this thread.
         threading.Thread(target=daemon.shutdown, daemon=True).start()
 
-    signal.signal(signal.SIGTERM, stop)
-    signal.signal(signal.SIGINT, stop)
+    # SIGHUP is what closing the terminal sends. Left alone it would end this process
+    # on the spot, with nothing saved and mpv still running with nobody to control it.
+    for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(number, stop)
     print(f"playlist-player daemon on {daemon.url} (cache: {settings.cache_dir})", flush=True)
     try:
         daemon.serve_forever()

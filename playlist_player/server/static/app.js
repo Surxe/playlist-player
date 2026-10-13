@@ -12,7 +12,8 @@ const SEEK_STEP_S = 5;
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  playlists: $("playlists"), shuffle: $("shuffle"), coverage: $("coverage"),
+  playlists: $("playlists"), shuffle: $("shuffle"), unshuffle: $("unshuffle"),
+  coverage: $("coverage"),
   connection: $("connection"), tracks: $("tracks"), lyrics: $("lyrics"),
   lyricsNote: $("lyrics-note"), offset: $("offset"), offsetReset: $("offset-reset"),
   cover: $("cover"), title: $("title"), artists: $("artists"), toggle: $("toggle"),
@@ -87,10 +88,23 @@ async function loadPlaylists() {
     els.coverage.textContent = "No playlists are cached yet; run the sync command first.";
     return;
   }
-  const playing = state?.playlist_id;
+  // The playlist the daemon last played (it resumes it on start), unless one is playing.
+  const saved = await getJson("/session").catch(() => null);
+  const playing = state?.playlist_id ?? saved?.playlist_id;
   if (playing && playlists.some((p) => p.id === playing)) els.playlists.value = playing;
   await showPlaylist(els.playlists.value);
 }
+
+// Shuffle draws a new order for the playlist shown and the daemon keeps it: the list
+// below is redrawn in that order, and the queue follows it at once if it is playing.
+async function reorder(action) {
+  if (!playlist) return;
+  const result = await postJson(`/playlists/${playlist.id}/${action}`);
+  if (result.ok) await showPlaylist(playlist.id);
+  else els.coverage.textContent = result.error;
+}
+els.shuffle.addEventListener("click", () => reorder("shuffle"));
+els.unshuffle.addEventListener("click", () => reorder("unshuffle"));
 
 async function showPlaylist(id) {
   playlist = await getJson(`/playlists/${id}`);
@@ -99,6 +113,7 @@ async function showPlaylist(id) {
   els.coverage.textContent =
     `${c.tracks} tracks, ${c.audio} with audio, ${c.synced} with synced lyrics`;
   els.tracks.replaceChildren(...playlist.tracks.map(trackRow));
+  els.unshuffle.hidden = !playlist.shuffled;
   markCurrentTrack();
   renderNowPlaying();
 }
@@ -123,11 +138,7 @@ function trackRow(track, index) {
   );
   if (track.has_audio) {
     row.addEventListener("click", () =>
-      post("/player/load", {
-        playlist_id: playlist.id,
-        start_track_id: track.id,
-        shuffle: els.shuffle.checked,
-      }),
+      post("/player/load", { playlist_id: playlist.id, start_track_id: track.id }),
     );
   }
   return row;
@@ -253,7 +264,7 @@ function connect() {
 els.playlists.addEventListener("change", () => showPlaylist(els.playlists.value));
 els.toggle.addEventListener("click", () => {
   if (!state?.queue_length && playlist) {
-    post("/player/load", { playlist_id: playlist.id, shuffle: els.shuffle.checked });
+    post("/player/load", { playlist_id: playlist.id });
   } else {
     post("/player/toggle");
   }
