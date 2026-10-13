@@ -14,6 +14,7 @@ import contextlib
 import http.client
 import json
 import socket
+import sys
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -120,7 +121,12 @@ class DaemonClient:
                     if name == "state":
                         self._apply(PlaybackState.from_dict(document))
                     elif self._on_overlay is not None:
-                        self._on_overlay(document)
+                        try:
+                            self._on_overlay(document)
+                        except Exception as exc:
+                            # Settings that cannot be applied must not end this thread:
+                            # it is also what keeps the lyrics following playback.
+                            print(f"playlist_player: overlay settings: {exc}", file=sys.stderr)
                         self._on_change()
         finally:
             self._socket = None

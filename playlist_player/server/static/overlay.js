@@ -7,11 +7,12 @@
 // settings are overridden and offers the lines that would make them the configuration.
 
 // How each setting is shown. `slider` is the comfortable range for dragging; the number
-// box beside it accepts the whole range the daemon allows.
+// box beside it accepts the whole range the daemon allows. A margin's slider depends on
+// the anchor (see marginSlider), so `slider` there is only its widest form.
 export const FIELDS = [
   { key: "anchor", label: "Anchor" },
-  { key: "margin_x", label: "Margin X", unit: "px", slider: [-1000, 1000] },
-  { key: "margin_y", label: "Margin Y", unit: "px", slider: [-600, 600] },
+  { key: "margin_x", label: "Margin X", unit: "px", slider: [-1000, 1000], edges: ["left", "right"] },
+  { key: "margin_y", label: "Margin Y", unit: "px", slider: [-600, 600], edges: ["top", "bottom"] },
   { key: "monitor", label: "Monitor", placeholder: "e.g. DP-2; empty lets the compositor choose" },
   { key: "font_size", label: "Font size", unit: "pt", slider: [8, 96] },
   { key: "max_width", label: "Max width", unit: "px", slider: [200, 3000] },
@@ -41,6 +42,16 @@ export function parseValue(rule, raw) {
     return /^(#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})|[a-z]{3,20})$/i.test(raw) ? raw : undefined;
   }
   return String(raw);
+}
+
+// The slider range for a margin under an anchor. Along an axis the overlay is attached
+// on, the margin is a distance in from that edge, and a negative one would slide the
+// line off the screen, so the slider starts at 0. On an axis it is centred on, the
+// margin is an offset either way.
+export function marginSlider(field, anchor) {
+  const [low, high] = field.slider;
+  const attached = field.edges.some((edge) => String(anchor).split("-").includes(edge));
+  return attached ? [0, high] : [low, high];
 }
 
 // The value a colour picker can show for a colour setting: it only understands #rrggbb.
@@ -191,6 +202,12 @@ export function initOverlayPanel({ getJson, postJson }) {
       drop.hidden = !overridden;
       const configured = doc.defaults[key] === "" ? "(empty)" : doc.defaults[key];
       row.title = overridden ? `Configured value: ${configured}` : "";
+      const field = FIELDS.find((candidate) => candidate.key === key);
+      if (field.edges) {
+        const [low, high] = marginSlider(field, doc.settings.anchor);
+        inputs[0].min = String(low);
+        inputs[0].max = String(high);
+      }
       // A value on its way to the daemon is newer than the document in hand.
       if (key in pending || key in inFlight) continue;
       for (const input of inputs) {

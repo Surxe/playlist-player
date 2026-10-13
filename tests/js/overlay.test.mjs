@@ -4,7 +4,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { FIELDS, parseValue, pickerColor } from "../../playlist_player/server/static/overlay.js";
+import {
+  FIELDS,
+  marginSlider,
+  parseValue,
+  pickerColor,
+} from "../../playlist_player/server/static/overlay.js";
 
 const whole = { kind: "int", min: -5000, max: 5000 };
 
@@ -47,4 +52,16 @@ test("every setting is listed once", () => {
   const keys = FIELDS.map((field) => field.key);
   assert.equal(new Set(keys).size, keys.length);
   assert.equal(keys.length, 12);
+});
+
+test("a margin slider cannot drag an attached overlay off the screen", () => {
+  const x = FIELDS.find((field) => field.key === "margin_x");
+  const y = FIELDS.find((field) => field.key === "margin_y");
+  assert.deepEqual(marginSlider(y, "bottom"), [0, 600]);
+  assert.deepEqual(marginSlider(x, "bottom"), [-1000, 1000]); // centred on that axis
+  assert.deepEqual(marginSlider(x, "top-right"), [0, 1000]);
+  assert.deepEqual(marginSlider(y, "top-right"), [0, 600]);
+  assert.deepEqual(marginSlider(x, "center"), [-1000, 1000]);
+  assert.deepEqual(marginSlider(y, "center"), [-600, 600]);
+  assert.deepEqual(marginSlider(y, "left"), [-600, 600]);
 });

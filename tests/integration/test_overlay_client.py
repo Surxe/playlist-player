@@ -240,3 +240,24 @@ def test_a_client_without_a_settings_handler_still_follows_playback(harness):
         wait_until(lambda: harness.text_in(1.2) == "an invented first line")
     finally:
         client.stop()
+
+
+def test_settings_that_cannot_be_applied_do_not_stop_the_lyrics(harness, capsys):
+    def explode(document):
+        raise RuntimeError("could not apply")
+
+    client = DaemonClient(
+        f"http://127.0.0.1:{harness.port}", harness.model, on_change=harness._wake,
+        on_overlay=explode, reconnect_s=(0.05, 0.2),
+    )  # fmt: skip
+    harness.start_daemon()
+    client.start()
+    try:
+        wait_until(lambda: harness.daemon.open_streams == 1)
+        harness.daemon.overlay.update({"lines": 2})
+        harness.play()
+        wait_until(lambda: harness.text_in(1.2) == "an invented first line")
+        assert client._thread.is_alive()
+        assert "overlay settings: could not apply" in capsys.readouterr().err
+    finally:
+        client.stop()

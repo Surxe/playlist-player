@@ -14,6 +14,7 @@ window that the compositor treats like any other.
 
 from __future__ import annotations
 
+import ctypes
 import signal
 import sys
 from pathlib import Path
@@ -170,8 +171,26 @@ class GtkLayerRenderer:
                 "leaving the choice to the compositor",
                 file=sys.stderr,
             )
-        if found != LayerShell.get_monitor(window):
+        if found is not None and found != LayerShell.get_monitor(window):
             LayerShell.set_monitor(window, found)
+        elif found is None and LayerShell.get_monitor(window) is not None:
+            self._clear_monitor()
+
+    def _clear_monitor(self) -> None:
+        """Hand the choice of monitor back to the compositor.
+
+        The library takes NULL for that, but its Python binding refuses ``None``, so the
+        C function is called directly. If that cannot be done the overlay simply stays
+        on the monitor it is on, which is one of the choices the compositor could make.
+        """
+        try:
+            library = ctypes.CDLL("libgtk4-layer-shell.so.0")
+            library.gtk_layer_set_monitor.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            library.gtk_layer_set_monitor.restype = None
+            # hash() of a PyGObject wrapper is the address of the object it wraps.
+            library.gtk_layer_set_monitor(hash(self._window), None)
+        except (OSError, AttributeError) as exc:
+            print(f"playlist_player: could not release the monitor: {exc}", file=sys.stderr)
 
     @staticmethod
     def monitor_names() -> list[str]:
@@ -222,11 +241,26 @@ class GtkLayerRenderer:
             self._placement = placement
             self._monitor_name = monitor
             self._apply_placement()
-        # A mapped window keeps the size it has when only its content's natural size
-        # changes (a smaller font, a removed shift), leaving the text adrift inside a
-        # surface that is too large. Forgetting the remembered size makes it fit again.
-        self._window.set_default_size(-1, -1)
+        self._refit()
         return GLib.SOURCE_REMOVE
+
+    def _refit(self) -> None:
+        """Make the window take the natural size of what it now holds.
+
+        A mapped window keeps its size when only its content's natural size changes (a
+        smaller font, a removed shift), leaving the text adrift inside a surface that is
+        too large. Naming the natural size as the default makes GTK resize to it.
+
+        The default size must then go back to (0, 0). That is the value the layer-shell
+        library gives the window and the only one it works with: left at anything else
+        (GTK's own "unset" of -1 included), the window resizes once and is then
+        destroyed by the library the next time it is hidden and shown.
+        """
+        child = self._window.get_child()
+        width = child.measure(Gtk.Orientation.HORIZONTAL, -1).natural
+        height = child.measure(Gtk.Orientation.VERTICAL, width).natural
+        self._window.set_default_size(width, height)
+        self._window.set_default_size(0, 0)
 
     def _quit(self) -> bool:
         self._loop.quit()
@@ -263,6 +297,8 @@ class GtkLayerRenderer:
         self._next.set_visible(bool(view.next_text))
         if not previous.visible or previous.text != view.text:
             self._fade_in()
+        if previous.visible:
+            self._refit()  # changed in place: a window just being shown sizes itself
         self._window.set_visible(True)
 
     def _fade_in(self) -> None:
