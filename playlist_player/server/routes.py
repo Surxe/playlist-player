@@ -40,6 +40,7 @@ _STATIC = {
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/static/clock.js": ("clock.js", "text/javascript; charset=utf-8"),
     "/static/overlay.js": ("overlay.js", "text/javascript; charset=utf-8"),
+    "/static/settings.js": ("settings.js", "text/javascript; charset=utf-8"),
     "/static/style.css": ("style.css", "text/css; charset=utf-8"),
 }
 _IMAGE_TYPES = (

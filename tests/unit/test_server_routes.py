@@ -214,7 +214,7 @@ def test_the_page_is_the_one_this_process_started_with(routes, monkeypatch, tmp_
     before = routes.dispatch("GET", "/static/app.js").body
     replaced = tmp_path / "static"
     replaced.mkdir()
-    for name in ("index.html", "app.js", "clock.js", "overlay.js", "style.css"):
+    for name in ("index.html", "app.js", "clock.js", "overlay.js", "settings.js", "style.css"):
         (replaced / name).write_text("// a later version")
     monkeypatch.setattr(routes_module, "_STATIC_DIR", replaced)
     assert routes.dispatch("GET", "/static/app.js").body == before
@@ -366,7 +366,8 @@ def test_static_files_come_from_an_allowlist(routes):
     assert page.status == 200 and page.content_type.startswith("text/html")
     assert b'src="/static/app.js"' in page.body
     for name, kind in [("app.js", "text/javascript"), ("clock.js", "text/javascript"),
-                       ("overlay.js", "text/javascript"), ("style.css", "text/css")]:  # fmt: skip
+                       ("overlay.js", "text/javascript"), ("settings.js", "text/javascript"),
+                       ("style.css", "text/css")]:  # fmt: skip
         response = routes.dispatch("GET", f"/static/{name}")
         assert response.status == 200 and response.content_type.startswith(kind)
     assert routes.dispatch("GET", "/static/index.html").status == 404

@@ -4,6 +4,7 @@
 
 import { currentIndex, formatTime, lineProgress, positionAt } from "./clock.js";
 import { initOverlayPanel } from "./overlay.js";
+import { initSettingsPane } from "./settings.js";
 
 const API = "/api/v1";
 // Show a line slightly before its timestamp; it reads better than exactly on it.
@@ -65,6 +66,7 @@ async function postJson(path, body = {}) {
 }
 
 const overlayPanel = initOverlayPanel({ getJson, postJson });
+initSettingsPane([overlayPanel]);
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -347,7 +349,7 @@ document.addEventListener("keydown", (event) => {
   const target = event.target;
   if (target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) return;
   if (target instanceof HTMLInputElement && target.type !== "range") return;
-  if (target instanceof Element && target.closest("#overlay-pane")) return;
+  if (target instanceof Element && target.closest("#settings-pane")) return;
   const actions = {
     " ": () => els.toggle.click(),
     ArrowLeft: () => post("/player/seek", { delta_s: -SEEK_STEP_S }),

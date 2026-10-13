@@ -99,7 +99,7 @@ window.t = {
 OPEN = [
     {"wait": "document.getElementById('playlists').options.length"},
     {"eval": HELPERS},
-    {"eval": "t.el('overlay-open').click()"},
+    {"eval": "t.el('settings-open').click()"},
     {"wait": "document.querySelectorAll('#overlay-form .row').length === 12"},
 ]
 
@@ -107,7 +107,7 @@ OPEN = [
 def test_the_panel_shows_the_settings_and_changes_reach_the_daemon(daemon, tmp_path, store):
     shot = tmp_path / "panel.png"
     steps = [
-        {"eval": "document.getElementById('overlay-pane').hidden"},
+        {"eval": "document.getElementById('settings-pane').hidden"},
         *OPEN,
         {"eval": "[t.values('margin_y')[0], t.text('overlay-status')]"},
         {"eval": "t.el('overlay-reset').disabled"},
@@ -118,7 +118,7 @@ def test_the_panel_shows_the_settings_and_changes_reach_the_daemon(daemon, tmp_p
         {"eval": "t.drag(t.beside('Font size'), '48')"},
         {"eval": "t.drag(t.beside('Text colour'), '#ffe066')"},
         {"wait": "t.overridden('color')[0]"},  # the last change has come back from the daemon
-        {"eval": "document.getElementById('overlay-pane').textContent"},
+        {"eval": "document.getElementById('settings-pane').textContent"},
         {"eval": "t.values('font_size', 'color')"},  # the slider's and the picker's partners
         {"eval": "t.overridden('margin_y', 'margin_x', 'font')"},
         {"eval": "t.el('overlay-reset').disabled"},
@@ -130,7 +130,8 @@ def test_the_panel_shows_the_settings_and_changes_reach_the_daemon(daemon, tmp_p
 
     panel_text, partners, overridden, reset_disabled, _shot = results[-5:]
     # The panel says changes need no saving, and offers nothing that suggests they do.
-    assert "saved automatically and take effect immediately" in " ".join(panel_text.split())
+    said = " ".join(panel_text.split())
+    assert "Changes are saved automatically." in said and "take effect immediately" in said
     assert "Copy" not in panel_text and "PLAYLIST_PLAYER_" not in panel_text
     assert partners == ["48", "#ffe066"]
     assert overridden == [True, False, True] and reset_disabled is False
@@ -197,8 +198,8 @@ def test_the_sample_line_is_asked_for_kept_alive_and_withdrawn(daemon, tmp_path)
         {"eval": "t.pause(3600)"},  # long enough for one renewal
         # Space in a text box types a space; it must not reach the transport keys.
         {"eval": f"(t.field('font').focus(), t.field('font').dispatchEvent({space}))"},
-        {"eval": "t.el('overlay-close').click()"},
-        {"wait": "t.el('overlay-pane').hidden"},
+        {"eval": "t.el('settings-close').click()"},
+        {"wait": "t.el('settings-pane').hidden"},
         {"eval": "t.pause(300)"},
     ]
     drive(daemon, tmp_path, steps)
