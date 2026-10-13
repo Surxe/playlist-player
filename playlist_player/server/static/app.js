@@ -118,6 +118,21 @@ async function showPlaylist(id) {
   renderNowPlaying();
 }
 
+// A track's lyric offset as the table shows it: signed milliseconds, marked when set.
+function offsetLabel(ms) {
+  return `${ms > 0 ? "+" : ""}${ms} ms`;
+}
+
+// Show a track's offset in its row, and keep the playlist's copy of it in step.
+function setRowOffset(trackId, ms) {
+  const track = tracksById.get(trackId);
+  if (track) track.offset_ms = ms;
+  const cell = els.tracks.querySelector(`li[data-id="${trackId}"] .offset`);
+  if (!cell) return;
+  cell.textContent = offsetLabel(ms);
+  cell.classList.toggle("set", ms !== 0);
+}
+
 function trackRow(track, index) {
   const row = element("li", track.has_audio ? "" : "unplayable");
   row.dataset.id = track.id;
@@ -130,10 +145,14 @@ function trackRow(track, index) {
   } else if (track.timing_confidence === "low") {
     badges.append(element("span", "badge warn", "timing?"));
   }
+  const offset = element("span", "offset", offsetLabel(track.offset_ms));
+  offset.classList.toggle("set", track.offset_ms !== 0);
+  offset.title = "Lyric offset for this track";
   row.append(
     element("span", "index", String(index + 1)),
     name,
     badges,
+    offset,
     element("span", "length", formatTime(track.duration_ms / 1000)),
   );
   if (track.has_audio) {
@@ -213,7 +232,10 @@ function applyState(next) {
 
   const active = state.status === "playing" || state.status === "loading";
   els.toggle.textContent = active ? "Pause" : "Play";
-  els.offset.textContent = `${state.offset_ms > 0 ? "+" : ""}${state.offset_ms} ms`;
+  els.offset.textContent = offsetLabel(state.offset_ms);
+  if (state.track_id && tracksById.get(state.track_id)?.offset_ms !== state.offset_ms) {
+    setRowOffset(state.track_id, state.offset_ms);
+  }
   els.duration.textContent = formatTime(state.duration_s ?? 0);
   els.seek.max = String(state.duration_s ?? 1);
   if (!settingVolume) els.volume.value = String(state.volume);
@@ -284,8 +306,13 @@ els.volume.addEventListener("change", async () => {
   settingVolume = false;
 });
 
-function setOffset(value) {
-  if (state?.track_id) post(`/tracks/${state.track_id}/offset`, { offset_ms: value });
+async function setOffset(value) {
+  if (!state?.track_id) return;
+  const trackId = state.track_id;
+  const result = await postJson(`/tracks/${trackId}/offset`, { offset_ms: value });
+  // The daemon clamps the value; show what it kept, even if the track is not playing.
+  if (result.ok) setRowOffset(trackId, result.data.offset_ms);
+  else els.lyricsNote.textContent = result.error;
 }
 for (const button of document.querySelectorAll("[data-nudge]")) {
   button.addEventListener("click", () =>

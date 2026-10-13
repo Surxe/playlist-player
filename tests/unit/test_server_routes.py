@@ -495,3 +495,25 @@ def test_without_an_overlay_store_the_endpoints_do_not_exist(store, player):
     library = Library(store)
     bare = Routes(library, player, PlaybackSession(store, library, player))
     assert bare.dispatch("GET", API + "/overlay").status == 404
+
+
+def test_an_offset_is_kept_per_track_and_comes_back_after_a_restart(store, player):
+    build_library(store)
+    library = Library(store)
+    session = PlaybackSession(store, library, player)
+    first = Routes(library, player, session)
+    response, body = post(first, "/tracks/TRK0001/offset", {"offset_ms": 250})
+    assert (response.status, body["offset_ms"]) == (200, 250)
+    post(first, "/tracks/TRK0002/offset", {"offset_ms": -4000})  # clamped at the limit
+    _, described = get(first, f"/playlists/{PLAYLIST_ID}")
+    offsets = {t["id"]: t["offset_ms"] for t in described["tracks"]}
+    assert offsets["TRK0001"] == 250 and offsets["TRK0002"] == -4000
+    assert offsets["TRK0000"] == 0
+
+    # A new process reads the same files: the offsets are the ones that were saved.
+    second = Routes(Library(store), FakePlayer(), PlaybackSession(store, Library(store), player))
+    _, again = get(second, f"/playlists/{PLAYLIST_ID}")
+    assert {t["id"]: t["offset_ms"] for t in again["tracks"]} == offsets
+    _, track = get(second, "/tracks/TRK0001")
+    assert track["offset_ms"] == 250
+    assert second.dispatch("GET", API + "/tracks/TRK0001/lyrics").status == 200

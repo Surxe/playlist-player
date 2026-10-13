@@ -272,3 +272,34 @@ def test_clicking_a_track_in_a_shuffled_list_plays_on_down_the_list(daemon, tmp_
     listed = results[1]
     assert results[-1] == listed[1]
     assert daemon.player.calls[-1] == ("load_queue", listed[:4], 1)
+
+
+OFFSET_TEXT_OF_TRK0002 = (
+    "document.querySelector('#tracks li[data-id=\"TRK0002\"] .offset').textContent === '+50 ms'"
+)
+
+
+def test_the_track_list_shows_each_tracks_offset_and_follows_changes(daemon, tmp_path):
+    """Every row has its offset; a changed one shows at once, playing or not."""
+    daemon.routes.dispatch("POST", "/api/v1/tracks/TRK0001/offset", b'{"offset_ms": 250}')
+    listed = (
+        "[...document.querySelectorAll('#tracks li')].map((row) => "
+        "[row.dataset.id, row.querySelector('.offset').textContent, "
+        "row.querySelector('.offset').classList.contains('set')])"
+    )
+    results = drive(daemon, tmp_path, [
+        READY,
+        {"eval": listed},
+        {"eval": "document.querySelectorAll('#tracks li')[2].click()"},  # TRK0002 plays
+        {"wait": "document.querySelector('#tracks li.current')"},
+        {"eval": "document.querySelector('#tracks li[data-id=\"TRK0002\"] .offset').click()"},
+        {"eval": "document.querySelector('#offset-tools [data-nudge=\"50\"]').click()"},
+        {"wait": OFFSET_TEXT_OF_TRK0002},
+        {"eval": listed},
+    ])  # fmt: skip
+    before, after = results[1], results[-1]
+    assert before[0] == ["TRK0000", "0 ms", False]
+    assert before[1] == ["TRK0001", "+250 ms", True]
+    assert after[0] == ["TRK0000", "0 ms", False]  # the others are untouched
+    assert after[1] == ["TRK0001", "+250 ms", True]
+    assert after[2] == ["TRK0002", "+50 ms", True]
