@@ -6,9 +6,9 @@ the remote-control page while the overlay is running. Both go through :func:`cle
 a value the page may send is exactly a value the overlay could have been started with.
 
 A change made on the page is an *override*: it is layered over the configured value and
-kept by the daemon. An override equal to the configured value is not an override at all
-(see :func:`prune`), so once a value has been copied into the configuration the
-configuration is what counts again.
+kept by the daemon, which saves it as it is made. An override equal to the configured
+value is not an override at all (see :func:`prune`): setting a value back by hand is the
+same as resetting it.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ ANCHORS: tuple[str, ...] = get_args(Anchor)
 
 # A colour ends up inside a stylesheet, so only plain forms are accepted.
 _COLOR = re.compile(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|[a-zA-Z]{3,20}")
-# A font name is offered back as a line for a settings file that a shell may read, so it
-# is letters, digits and plain punctuation only: nothing a shell would interpret.
+# A font name is letters, digits and plain punctuation only. It arrives from a web page
+# and is stored and handed to the toolkit; nothing a real font name needs is left out.
 _FONT = re.compile(r"[\w][\w ,.\-]{0,79}")
 _MONITOR = re.compile(r"[A-Za-z0-9_.:\-]{0,40}")
 
@@ -187,22 +187,3 @@ def salvage(overrides: Any) -> tuple[dict[str, Any], list[str]]:
         except OverlaySettingError as exc:
             notes.append(f"ignoring a stored overlay override: {exc}")
     return kept, notes
-
-
-def env_lines(defaults: OverlaySettings, overrides: Mapping[str, Any]) -> list[str]:
-    """``NAME=value`` lines that would make ``overrides`` the configured values.
-
-    For pasting into a settings file. Values are quoted when they contain a space, which
-    both a shell and this package's own ``.env`` reader understand; :func:`clean` has
-    already kept out anything either would interpret.
-    """
-    changed = prune(defaults, overrides)
-    lines = []
-    for key in RULES:  # the order the settings are documented in
-        if key not in changed:
-            continue
-        text = str(changed[key])
-        if not text or " " in text:
-            text = f'"{text}"'
-        lines.append(f"{env_name(key)}={text}")
-    return lines

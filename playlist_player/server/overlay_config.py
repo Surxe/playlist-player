@@ -28,7 +28,6 @@ from ..overlay_settings import (
     OverlaySettingError,
     OverlaySettings,
     clean,
-    env_lines,
     prune,
     salvage,
 )
@@ -90,7 +89,6 @@ class OverlayConfig:
                 "defaults": self._defaults.to_dict(),
                 "overrides": dict(self._overrides),
                 "settings": self._defaults.merged(self._overrides).to_dict(),
-                "env_lines": env_lines(self._defaults, self._overrides),
                 "preview_until_ms": self._preview_until_ms,
                 "clients": self._clients,
             }

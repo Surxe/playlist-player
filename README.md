@@ -164,12 +164,11 @@ monitor, font, size, colours, a second (next) line, how early a line appears and
 fade. **Show a sample line** puts a stand-in line on screen so you can do this with
 nothing playing; it goes away by itself when the panel or the tab is closed.
 
-What the panel sets is an override on top of the configured value (the Configuration
-section below: a flag, an environment variable or `.env`). Overrides are kept in
-`state/overlay.json` and survive restarts. A highlighted row is overridden, the `x`
-beside it puts that one setting back, and **Reset** puts them all back. **Copy as
-settings lines** gives the overrides as `NAME=value` lines for your settings file; once
-a value is configured there, its override drops away and the file is what counts again.
+Changes are saved automatically and take effect immediately: there is nothing to save
+or copy anywhere. They are kept in `state/overlay.json` and are still there after a
+restart. A highlighted row has been changed in the panel; the `x` beside it puts that one
+setting back to its configured value (the Configuration section below), and **Reset to
+configured values** puts every one back.
 
 Without the page, `overlay --demo` shows a fixed line for trying flags by hand, such as
 `overlay --demo --overlay-anchor top-right --overlay-margin-y 40`.
