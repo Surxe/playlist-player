@@ -452,3 +452,42 @@ def test_reordering_to_tracks_the_player_does_not_hold_loads_them_instead(make_p
     player.reorder(reordered(other, ["T2", "T0", "T1"]))
     state = log.wait_for(lambda s: s.queue_length == 3 and s.track_id == "T0", timeout=8)
     assert state.queue_index == 1
+
+
+def test_a_restarted_mpv_keeps_the_volume_and_never_reports_the_default(make_player, tones):
+    player, log = make_player()
+    player.set_volume(40)
+    player.load_queue(queue_of(tones, [5]))
+    started = log.wait_for(lambda s: playing("T0")(s) and s.volume == 40)
+    first_pid = player._process.pid
+
+    os.kill(first_pid, signal.SIGKILL)
+    error = log.wait_for(lambda s: s.status is PlayerStatus.ERROR, after=started.version)
+    recovered = log.wait_for(lambda s: s.status is PlayerStatus.IDLE, after=error.version)
+    assert player._process.pid != first_pid
+    assert "--volume=40" in player.command_line()
+    later = [s.volume for s in log.states if s.version >= error.version]
+    assert set(later) == {40.0}, later
+
+    player.load_queue(queue_of(tones, [5]))
+    assert log.wait_for(playing("T0"), after=recovered.version).volume == 40
+
+
+def test_a_volume_changed_from_outside_is_the_one_a_restart_keeps(make_player, tones):
+    """The media keys change the volume inside mpv; that is still the listener's setting."""
+    player, log = make_player()
+    player.load_queue(queue_of(tones, [5]))
+    started = log.wait_for(playing("T0"))
+    player._command("set_property", "volume", 55)  # not through set_volume
+    log.wait_for(lambda s: s.volume == 55, after=started.version)
+    os.kill(player._process.pid, signal.SIGKILL)
+    log.wait_for(lambda s: s.status is PlayerStatus.IDLE and s.volume == 55, after=started.version)
+    assert "--volume=55" in player.command_line()
+
+
+def test_mpv_runs_in_its_own_process_group(make_player):
+    """A Ctrl-C in the terminal goes to our group; mpv must not be in it."""
+    player, _ = make_player()
+    assert os.getpgid(player._process.pid) == player._process.pid
+    assert os.getpgid(player._process.pid) != os.getpgid(0)
+    assert not any(arg.startswith("--volume") for arg in player.command_line())  # none set yet

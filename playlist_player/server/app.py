@@ -205,8 +205,10 @@ def run(settings: Settings) -> int:
         # shutdown() blocks until serve_forever returns, so it cannot run on this thread.
         threading.Thread(target=daemon.shutdown, daemon=True).start()
 
-    signal.signal(signal.SIGTERM, stop)
-    signal.signal(signal.SIGINT, stop)
+    # SIGHUP is what closing the terminal sends. Left alone it would end this process
+    # on the spot, with nothing saved and mpv still running with nobody to control it.
+    for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(number, stop)
     print(f"playlist-player daemon on {daemon.url} (cache: {settings.cache_dir})", flush=True)
     try:
         daemon.serve_forever()

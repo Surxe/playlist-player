@@ -253,3 +253,18 @@ def test_reducer_ignores_messages_it_does_not_know(reducer):
     assert not reducer.apply({"event": "audio-reconfig"})
     assert not reducer.apply({})
     assert not reducer.apply(prop("some-new-property", 1))
+
+
+def test_a_dead_player_still_reports_the_volume_it_had():
+    reducer = MpvStateReducer()
+    reducer.apply({"event": "property-change", "name": "volume", "data": 35.0})
+    reducer.apply({"event": "property-change", "name": "pause", "data": True})
+    reducer.set_fatal("mpv exited unexpectedly")
+    dead = reducer.snapshot(None, 0)
+    assert dead.status is PlayerStatus.ERROR and dead.volume == 35.0
+    reducer.set_fatal(None)
+    assert reducer.snapshot(None, 0).volume == 35.0
+
+    fresh = MpvStateReducer()  # one that never heard a volume has only the default to give
+    fresh.set_fatal("mpv exited unexpectedly")
+    assert fresh.snapshot(None, 0).volume == 100.0

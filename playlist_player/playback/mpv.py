@@ -83,6 +83,9 @@ class MpvPlayer:
         self._resume_at: float | None = None
         # True while the playlist is being rearranged; nothing is published meanwhile.
         self._reordering = False
+        # The volume last set or reported. An mpv started later is started at it, so a
+        # player that had to be restarted does not come back at mpv's default of 100.
+        self._volume: float | None = None
         self._thread: threading.Thread | None = None
 
     # ------------------------------ lifecycle ------------------------------ #
@@ -112,6 +115,8 @@ class MpvPlayer:
         ]
         if self._audio_output:
             args.append(f"--ao={self._audio_output}")
+        if self._volume is not None:
+            args.append(f"--volume={self._volume:g}")
         if self._mpris_plugin:
             # An explicit --script still loads with --load-scripts=no; that flag only
             # stops mpv scanning its script directories.
@@ -132,12 +137,17 @@ class MpvPlayer:
             self._socket_path.unlink()  # a stale socket from a run that did not exit cleanly
         try:
             # umask 077 so the socket is 0600 from the moment mpv creates it.
+            # Its own process group, so that a signal aimed at ours does not reach it.
+            # Ctrl-C in a terminal goes to the whole foreground group: mpv would exit
+            # at the same moment as us, before we had recorded where playback was, and
+            # be taken for a crash. We stop it ourselves, in order, in close().
             self._process = subprocess.Popen(
                 self.command_line(),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 umask=0o077,
+                process_group=0,
             )
         except OSError as exc:
             raise PlaybackError(f"could not start mpv ({self._mpv_bin}): {exc}") from exc
@@ -299,7 +309,9 @@ class MpvPlayer:
             self._command("seek", amount, mode)
 
     def set_volume(self, volume: float) -> None:
-        self._command("set_property", "volume", max(0.0, min(100.0, float(volume))))
+        volume = max(0.0, min(100.0, float(volume)))
+        self._volume = volume
+        self._command("set_property", "volume", volume)
 
     def set_offset(self, track_id: str, offset_ms: int) -> None:
         if self._reducer.queue.set_offset(track_id, offset_ms):
@@ -352,6 +364,7 @@ class MpvPlayer:
             if isinstance(item, dict):
                 if item.get("event") == "playback-restart":
                     self._seek_to_resume_point()
+                self._note_volume(item)
                 due = self._reducer.apply(item)
             elif item is None:
                 # Heartbeat: while playing, a fresh snapshot now and then corrects drift.
@@ -360,6 +373,13 @@ class MpvPlayer:
             if due and not self._closing and not self._reordering:
                 self._publish()
                 last_publish = time.monotonic()
+
+    def _note_volume(self, message: dict[str, Any]) -> None:
+        """Remember a volume mpv reports, however it was changed (the media keys, say)."""
+        if message.get("event") == "property-change" and message.get("name") == "volume":
+            volume = message.get("data")
+            if isinstance(volume, int | float) and not isinstance(volume, bool):
+                self._volume = float(volume)
 
     def _seek_to_resume_point(self) -> None:
         """Seek to a resumed position once its file is open.
