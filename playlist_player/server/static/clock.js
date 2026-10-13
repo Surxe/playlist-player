@@ -29,6 +29,22 @@ export function currentIndex(times, positionMs, leadMs = 0, offsetMs = 0) {
   return low - 1;
 }
 
+// How far playback is through the line at `index`, from 0 to 1, or null when that
+// cannot be said. Lyric files record only when each line starts, so a line's span is
+// taken to run until the next line starts (until the track ends, for the last line):
+// it covers any pause or instrumental that follows the words, not just the singing.
+// The lead and the offset shift this the same way they shift which line is current.
+export function lineProgress(times, index, positionMs, leadMs = 0, offsetMs = 0, durationMs = null) {
+  if (index < 0 || index >= times.length) return null;
+  const shift = leadMs + offsetMs;
+  const start = times[index];
+  let end = null;
+  if (index + 1 < times.length) end = times[index + 1];
+  else if (durationMs !== null && Number.isFinite(durationMs)) end = durationMs + shift;
+  if (end === null || end <= start) return null;
+  return Math.min(1, Math.max(0, (positionMs + shift - start) / (end - start)));
+}
+
 export function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const whole = Math.floor(seconds);

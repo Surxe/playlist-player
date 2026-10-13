@@ -113,6 +113,22 @@ ol { list-style: none; margin: 0; padding: 0; }
 #lyrics li { padding: 6px 0; font-size: 18px; color: var(--muted); min-height: 1.4em; transition: color 120ms; }
 #lyrics li.past { color: #5d6672; }
 #lyrics li.current { color: var(--text); font-size: 22px; font-weight: 600; }
+/* Progress through the current line: a rail, and a fill that reaches its end as the
+   next line starts. Capped in width so a short line does not get a bar across the pane. */
+#lyrics li.current { position: relative; }
+#lyrics li.current.timed::before, #lyrics li.current.timed::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+}
+#lyrics li.current.timed::before { width: min(100%, 26em); background: var(--line); }
+#lyrics li.current.timed::after {
+  width: calc(var(--progress, 0) * min(100%, 26em));
+  background: var(--accent);
+}
 #lyrics.plain { padding: 16px 24px; }
 #lyrics.plain li { font-size: 15px; padding: 2px 0; }
 

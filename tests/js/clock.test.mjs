@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   currentIndex,
   formatTime,
+  lineProgress,
   positionAt,
 } from "../../playlist_player/server/static/clock.js";
 
@@ -59,4 +60,46 @@ test("formatTime", () => {
   assert.equal(formatTime(600), "10:00");
   assert.equal(formatTime(-1), "0:00");
   assert.equal(formatTime(NaN), "0:00");
+});
+
+// Lines at 1.0 s, 2.5 s and 4.0 s.
+const times = [1000, 2500, 4000];
+
+test("lineProgress runs from a line's start to the next line's start", () => {
+  assert.equal(lineProgress(times, 0, 1000), 0);
+  assert.equal(lineProgress(times, 0, 1750), 0.5);
+  assert.equal(lineProgress(times, 1, 3250), 0.5);
+  assert.equal(lineProgress(times, 0, 2500), 1);
+});
+
+test("lineProgress is shifted by the lead and the offset exactly as the current line is", () => {
+  // 150 ms of lead: the line appears early, so it is already 10% through at its timestamp.
+  assert.equal(lineProgress(times, 0, 1000, 150), 0.1);
+  // A positive offset shows lyrics sooner: further through at the same position.
+  assert.equal(lineProgress(times, 0, 1300, 0, 300), 0.4);
+  assert.equal(lineProgress(times, 0, 1300, 0, -300), 0);
+  for (const [position, lead, offset] of [[1700, 150, 0], [2000, 0, 450], [2600, 150, -300]]) {
+    const index = currentIndex(times, position, lead, offset);
+    const progress = lineProgress(times, index, position, lead, offset);
+    assert.ok(progress >= 0 && progress < 1, `${position} ${lead} ${offset} -> ${progress}`);
+  }
+});
+
+test("lineProgress takes the last line to the end of the track", () => {
+  assert.equal(lineProgress(times, 2, 4500, 0, 0, 5000), 0.5);
+  assert.equal(lineProgress(times, 2, 5000, 0, 0, 5000), 1);
+  // The end moves with the shift too: at the last instant of the track it is full.
+  assert.equal(lineProgress(times, 2, 5000, 150, 200, 5000), 1);
+  assert.equal(lineProgress(times, 2, 4500, 0, 0), null); // no duration known: no span
+  assert.equal(lineProgress(times, 2, 4500, 0, 0, null), null);
+});
+
+test("lineProgress stays within 0 and 1 and refuses what has no span", () => {
+  assert.equal(lineProgress(times, 0, 500), 0);
+  assert.equal(lineProgress(times, 0, 9000), 1);
+  assert.equal(lineProgress(times, -1, 500), null); // before the first line
+  assert.equal(lineProgress(times, 3, 500), null);
+  assert.equal(lineProgress([], 0, 500), null);
+  assert.equal(lineProgress([1000, 1000, 2000], 0, 1000), null); // two lines at one instant
+  assert.equal(lineProgress(times, 2, 4500, 0, 0, 3000), null); // a track shorter than its lyrics
 });

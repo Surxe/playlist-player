@@ -20,7 +20,7 @@ import pytest
 
 from playlist_player.config import REPO_ROOT, load_settings
 from playlist_player.server.app import Daemon
-from tests.support.library import build_library
+from tests.support.library import PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer
 
 DRIVER = REPO_ROOT / "tests" / "js" / "drive_page.mjs"
@@ -303,3 +303,90 @@ def test_the_track_list_shows_each_tracks_offset_and_follows_changes(daemon, tmp
     assert after[0] == ["TRK0000", "0 ms", False]  # the others are untouched
     assert after[1] == ["TRK0001", "+250 ms", True]
     assert after[2] == ["TRK0002", "+50 ms", True]
+
+
+# What the bar under the current lyric line looks like right now: the line's text, how
+# far the page says playback is through it, and the drawn width of the fill and its rail.
+BAR = """(() => {
+  const row = document.querySelector('#lyrics li.current');
+  if (!row) return null;
+  const fill = getComputedStyle(row, '::after');
+  const rail = getComputedStyle(row, '::before');
+  return {
+    text: row.textContent,
+    progress: row.dataset.progress ?? null,
+    drawn: fill.content !== 'none',
+    fill: parseFloat(fill.width),
+    rail: parseFloat(rail.width),
+  };
+})()"""
+
+
+def bar_at(daemon, tmp_path, position_s: float) -> dict:
+    """The bar as the page draws it with the synthetic track paused at ``position_s``."""
+    daemon.player.position = position_s
+    daemon.player._publish()
+    results = drive(daemon, tmp_path, [
+        {"wait": "document.querySelector('#lyrics li.current')"},
+        {"eval": "new Promise((done) => setTimeout(done, 200))"},
+        {"eval": BAR},
+    ])  # fmt: skip
+    return results[-1]
+
+
+def test_the_current_lyric_line_shows_how_far_through_it_playback_is(daemon, tmp_path):
+    """Lines at 1.0 s and 4.0 s with a pause marked at 2.5 s; the fake track is 5 s long.
+
+    The page shows each line 150 ms before its timestamp, and the bar is on that clock.
+    """
+    queue = daemon.routes._library.queue_for(PLAYLIST_ID)
+    daemon.player.load_queue(queue, paused=True)
+
+    first = bar_at(daemon, tmp_path, 1.75)  # (1750 + 150 - 1000) / (2500 - 1000)
+    assert first["text"] == "an invented first line" and first["drawn"] is True
+    assert float(first["progress"]) == pytest.approx(0.6, abs=0.001)
+    assert first["rail"] > 100
+    assert first["fill"] == pytest.approx(0.6 * first["rail"], abs=1.0)
+
+    # A later offset shows the lyrics sooner, so the same instant is further through the line.
+    daemon.routes.dispatch("POST", "/api/v1/tracks/TRK0000/offset", b'{"offset_ms": 300}')
+    shifted = bar_at(daemon, tmp_path, 1.75)  # (1750 + 150 + 300 - 1000) / 1500
+    assert float(shifted["progress"]) == pytest.approx(0.8, abs=0.001)
+    assert shifted["fill"] == pytest.approx(0.8 * shifted["rail"], abs=1.0)
+    daemon.routes.dispatch("POST", "/api/v1/tracks/TRK0000/offset", b'{"offset_ms": 0}')
+
+    # The pause between the lines is a line of its own with no words: nothing is drawn.
+    pause = bar_at(daemon, tmp_path, 3.0)
+    assert pause["text"] == "" and pause["drawn"] is False
+
+    # The last line runs to the end of the track: (4200 + 150 - 4000) / (5000 + 150 - 4000).
+    last = bar_at(daemon, tmp_path, 4.2)
+    assert last["text"] == "an invented last line" and last["drawn"] is True
+    assert float(last["progress"]) == pytest.approx(350 / 1150, abs=0.001)
+    assert last["fill"] == pytest.approx(350 / 1150 * last["rail"], abs=1.0)
+
+
+def test_the_bar_moves_while_the_song_plays_and_stops_when_it_is_paused(daemon, tmp_path):
+    queue = daemon.routes._library.queue_for(PLAYLIST_ID)
+    daemon.player.load_queue(queue, paused=True)
+    daemon.player.position = 1.0
+    daemon.player.play()  # from here the page extrapolates the position itself
+    read = "Number(document.querySelector('#lyrics li.current')?.dataset.progress ?? -1)"
+    results = drive(daemon, tmp_path, [
+        {"wait": f"{read} > 0"},
+        {"eval": read},
+        {"eval": "new Promise((done) => setTimeout(done, 300))"},
+        {"eval": read},
+    ])  # fmt: skip
+    earlier, later = results[1], results[3]
+    assert later - earlier == pytest.approx(0.3 / 1.5, abs=0.08)  # 300 ms of a 1.5 s line
+
+    daemon.player.position = 1.6
+    daemon.player.pause()
+    paused = drive(daemon, tmp_path, [
+        {"wait": f"{read} > 0"},
+        {"eval": read},
+        {"eval": "new Promise((done) => setTimeout(done, 300))"},
+        {"eval": read},
+    ])  # fmt: skip
+    assert paused[1] == paused[3] == pytest.approx(0.5, abs=0.001)
