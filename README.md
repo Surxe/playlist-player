@@ -132,10 +132,10 @@ it is on Spotify. Tracks a later sync adds go to the end of a kept order.
 puts them back when it starts: the same song at the same place, at the same volume, paused.
 It does not begin playing by itself. A song saved at its very end starts from the beginning.
 
-**Fade in** (under **Settings** on the page) makes the first sound after the daemon starts
-come up from silence over the number of seconds you set, so a restart is never a loud
-surprise; 0, the default, turns it off. Your volume is not changed while it fades. It
-needs mpv 0.37 or newer; with an older mpv playback simply starts at full level.
+**Fade in** (under **Settings** on the page) makes the music fade in when playlist-player
+starts up, over the number of seconds you set, instead of coming on at full volume; 0, the
+default, turns it off. Your volume is not changed while it fades. It needs mpv 0.37 or
+newer; with an older mpv playback simply starts at full level.
 
 `ctl` exists so a desktop shortcut can pause from inside a fullscreen application. With
 `PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN` set to the plugin's path (Debian:

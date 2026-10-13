@@ -423,5 +423,7 @@ def test_the_fade_in_setting_is_shown_and_saved_from_the_settings_pane(daemon, t
     ])[len(OPEN):]  # fmt: skip
     assert results[1] == ["2.5", "2.5"]
     assert results[3] == "4" and results[6] == "6.5"
-    assert "A change applies from the next start" in " ".join(results[-1].split())
+    said = " ".join(results[-1].split())
+    assert "the music fades in over this many seconds" in said
+    assert "A change applies the next time it starts" in said and "daemon" not in said
     assert daemon.session.document()["settings"] == {"fade_in_s": 6.5}
