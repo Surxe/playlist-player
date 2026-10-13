@@ -87,10 +87,22 @@ async function loadPlaylists() {
     els.coverage.textContent = "No playlists are cached yet; run the sync command first.";
     return;
   }
-  const playing = state?.playlist_id;
+  const saved = await getJson("/session").catch(() => null);
+  if (saved) els.shuffle.checked = saved.shuffle;
+  const playing = state?.playlist_id ?? saved?.playlist_id;
   if (playing && playlists.some((p) => p.id === playing)) els.playlists.value = playing;
   await showPlaylist(els.playlists.value);
 }
+
+// Shuffle is kept by the daemon, so it is the same after a restart. Turning it on draws
+// a new order; the next playlist or track started follows it.
+els.shuffle.addEventListener("change", async () => {
+  const result = await postJson("/session/shuffle", { enabled: els.shuffle.checked });
+  if (!result.ok) {
+    els.shuffle.checked = !els.shuffle.checked;
+    els.coverage.textContent = result.error;
+  }
+});
 
 async function showPlaylist(id) {
   playlist = await getJson(`/playlists/${id}`);

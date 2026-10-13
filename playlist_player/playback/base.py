@@ -17,8 +17,13 @@ from .state import StateBus
 class Player(Protocol):
     bus: StateBus
 
-    def load_queue(self, queue: PlayQueue, *, paused: bool = False) -> None:
-        """Replace the queue and start at ``queue.start_index``."""
+    def load_queue(
+        self, queue: PlayQueue, *, paused: bool = False, position_s: float | None = None
+    ) -> None:
+        """Replace the queue and start at ``queue.start_index``.
+
+        ``position_s``, when given, is where the first track starts (a resumed song).
+        """
         ...
 
     def play(self) -> None:

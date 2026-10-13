@@ -8,6 +8,7 @@ paths (:meth:`queue_for`) hands them to the player only.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -131,17 +132,43 @@ class Library:
 
     # ------------------------------- playing ------------------------------- #
 
-    def queue_for(
-        self, playlist_id: str, *, start_track_id: str | None = None, shuffle: bool = False
-    ) -> PlayQueue:
-        """The playlist's playable tracks, in order, as a queue for the player."""
+    def _playable(self, playlist_id: str) -> dict[str, TrackStatus]:
+        """The playlist's tracks that have cached audio, by ID."""
         playlist = self._playlist(playlist_id)
-        by_id = {s.track.id: s for s in assets.playlist_status(self._store, playlist)}
+        playable = {}
+        for status in assets.playlist_status(self._store, playlist):
+            if status.audio is not None:
+                playable[status.track.id] = status
+        if not playable:
+            raise NotInCacheError(f"playlist {playlist_id} has no cached audio to play")
+        return playable
+
+    def playable_ids(self, playlist_id: str) -> list[str]:
+        """Track IDs that can be played, in playlist order; a repeat is listed each time."""
+        playable = self._playable(playlist_id)
+        return [t for t in self._playlist(playlist_id).track_ids if t in playable]
+
+    def queue_for(
+        self,
+        playlist_id: str,
+        *,
+        start_track_id: str | None = None,
+        order: Sequence[str] | None = None,
+    ) -> PlayQueue:
+        """A queue of the playable tracks: in playlist order, or in ``order`` if given.
+
+        ``order`` must be a rearrangement of :meth:`playable_ids`; anything else is refused,
+        so a stale saved order cannot queue a track that is no longer there.
+        """
+        playable = self._playable(playlist_id)
+        expected = self.playable_ids(playlist_id)
+        if order is None:
+            order = expected
+        elif sorted(order) != sorted(expected):
+            raise NotInCacheError(f"the order for playlist {playlist_id} is out of date")
         entries = []
-        for track_id in playlist.track_ids:
-            status = by_id[track_id]
-            if status.audio is None:
-                continue
+        for track_id in order:
+            status = playable[track_id]
             entries.append(
                 QueueEntry(
                     track_id=track_id,
@@ -150,13 +177,9 @@ class Library:
                     offset_ms=status.state.offset_ms,
                 )
             )
-        if not entries:
-            raise NotInCacheError(f"playlist {playlist_id} has no cached audio to play")
-        if start_track_id is not None and all(e.track_id != start_track_id for e in entries):
+        if start_track_id is not None and start_track_id not in order:
             raise NotInCacheError(f"track {start_track_id} has no cached audio in this playlist")
-        return PlayQueue(
-            entries, playlist_id=playlist_id, start_track_id=start_track_id, shuffle=shuffle
-        )
+        return PlayQueue(entries, playlist_id=playlist_id, start_track_id=start_track_id)
 
     def set_offset(self, track_id: str, offset_ms: int) -> int:
         """Persist a track's lyric timing offset. Returns the value stored."""

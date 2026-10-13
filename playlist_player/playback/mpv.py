@@ -43,6 +43,9 @@ HEARTBEAT_S = 5.0
 # "Previous" restarts the current track when further in than this, as players usually do.
 _PREV_RESTARTS_AFTER_S = 3.0
 
+# sun_path is 108 bytes including the terminating NUL.
+_MAX_SOCKET_PATH = 108
+
 _CLOSED = object()  # inbox token: the IPC connection ended
 _REFRESH = object()  # inbox token: publish a fresh snapshot now
 
@@ -76,6 +79,8 @@ class MpvPlayer:
         self._ipc: MpvIpc | None = None
         self._closing = False
         self._restart_available = True
+        # A position to seek to once mpv reports the first file open (see load_queue).
+        self._resume_at: float | None = None
         self._thread: threading.Thread | None = None
 
     # ------------------------------ lifecycle ------------------------------ #
@@ -112,6 +117,12 @@ class MpvPlayer:
         return args
 
     def _spawn(self) -> None:
+        # A Unix socket path is limited to 108 bytes; say so rather than fail inside mpv.
+        if len(str(self._socket_path).encode()) >= _MAX_SOCKET_PATH:
+            raise PlaybackError(
+                f"the mpv socket path is too long ({self._socket_path}); "
+                "set a shorter XDG_RUNTIME_DIR"
+            )
         directory = self._socket_path.parent
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(directory, 0o700)
@@ -180,9 +191,12 @@ class MpvPlayer:
             raise PlaybackError("the player is not running")
         return ipc.command(*args)
 
-    def load_queue(self, queue: PlayQueue, *, paused: bool = False) -> None:
+    def load_queue(
+        self, queue: PlayQueue, *, paused: bool = False, position_s: float | None = None
+    ) -> None:
         with self._lock:
             self._reducer.set_queue(queue)
+            self._resume_at = position_s if position_s and position_s > 0 else None
             if not len(queue):
                 self._command("stop")
                 self._inbox.put(_REFRESH)
@@ -296,6 +310,8 @@ class MpvPlayer:
 
             due = item is _REFRESH
             if isinstance(item, dict):
+                if item.get("event") == "playback-restart":
+                    self._seek_to_resume_point()
                 due = self._reducer.apply(item)
             elif item is None:
                 # Heartbeat: while playing, a fresh snapshot now and then corrects drift.
@@ -304,6 +320,19 @@ class MpvPlayer:
             if due and not self._closing:
                 self._publish()
                 last_publish = time.monotonic()
+
+    def _seek_to_resume_point(self) -> None:
+        """Seek to a resumed position once its file is open.
+
+        Seeking straight after the load is not enough: mpv may still be opening the file,
+        and the seek would land on the file before it. mpv sends ``playback-restart`` once
+        the file is open, even when it starts paused, so the seek waits for that.
+        """
+        with self._lock:
+            position, self._resume_at = self._resume_at, None
+            if position is not None:
+                with contextlib.suppress(MpvCommandError, PlaybackError):
+                    self._command("seek", position, "absolute+exact")
 
     def _recover(self) -> bool:
         """mpv died without being asked to. Report it, then restart it once."""
@@ -323,6 +352,7 @@ class MpvPlayer:
                 return False
             # The new mpv has an empty playlist; the old queue is gone with the old process.
             self._reducer.set_queue(PlayQueue(()))
+            self._resume_at = None
             self._reducer.set_fatal(None)
         self._publish()
         return True

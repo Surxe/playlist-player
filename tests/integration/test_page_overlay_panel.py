@@ -211,3 +211,29 @@ def test_the_sample_line_is_asked_for_kept_alive_and_withdrawn(daemon, tmp_path)
     assert 6000 < asked[0] - started_ms < 14000  # a few seconds ahead, never open-ended
     assert seen[-1] == 0  # closing the panel takes the sample line down
     assert daemon.player.calls == []  # the space did not toggle playback
+
+
+def test_the_shuffle_box_shows_and_saves_the_daemons_setting(daemon, tmp_path):
+    """Shuffle is kept by the daemon: the box is set from it, and changing it saves it."""
+    first = drive(daemon, tmp_path, [
+        {"wait": "document.getElementById('playlists').options.length"},
+        {"eval": "document.getElementById('shuffle').checked"},
+        {"eval": "document.getElementById('shuffle').click()"},
+        {"wait": "document.getElementById('shuffle').checked"},
+    ])  # fmt: skip
+    assert first[1] is False
+    assert daemon.session.document()["shuffle"] is True
+
+    # A reload, as after a restart: the box comes back set.
+    second = drive(daemon, tmp_path, [
+        {"wait": "document.getElementById('playlists').options.length"},
+        {"eval": "document.getElementById('shuffle').checked"},
+    ])  # fmt: skip
+    assert second[1] is True
+
+    daemon.session.set_shuffle(False)
+    third = drive(daemon, tmp_path, [
+        {"wait": "document.getElementById('playlists').options.length"},
+        {"eval": "document.getElementById('shuffle').checked"},
+    ])  # fmt: skip
+    assert third[1] is False

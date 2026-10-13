@@ -115,6 +115,16 @@ from mpv. Pick a playlist, click a track, and the lyric pane follows the song; t
 offset buttons shift a track's lyrics earlier or later and the value is remembered in
 `state/`. Space toggles, left and right seek five seconds, up and down change track.
 
+**Shuffle** is kept by the daemon. Turning it on draws one random order of the playlist's
+playable tracks, and starting a different playlist while it is on draws another. That order
+is kept, so it plays the same way after a restart, and starting a track part-way through
+plays on from its place in it. A new order takes effect from the next playlist or track you
+start; the queue already playing is not reshuffled.
+
+**Resume.** The daemon remembers the playlist, the song, its position and the volume, and
+puts them back when it starts: the same song at the same place, at the same volume, paused.
+It does not begin playing by itself. A song saved at its very end starts from the beginning.
+
 `ctl` exists so a desktop shortcut can pause from inside a fullscreen application. With
 `PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN` set to the plugin's path (Debian:
 `/usr/lib/mpv-mpris/mpris.so`), the keyboard's media keys work too.
@@ -166,6 +176,7 @@ fullscreen.
 |------|-------|
 | `cache/` | Everything fetched: track lists, audio, lyrics, covers. Safe to delete; `sync` rebuilds it. |
 | `state/` | What you changed by hand: lyric offsets, audio pins, and overlay settings set from the page. Not rebuilt. |
+| `state/session.json` | What the daemon resumes: shuffle and its order, the playlist, song, position and volume. Rewritten as playback changes; deleting it just starts fresh. |
 
 Both are gitignored and sit in the repo by default; `PLAYLIST_PLAYER_CACHE_DIR` and
 `PLAYLIST_PLAYER_STATE_DIR` move them. Files get ordinary permissions, whatever your

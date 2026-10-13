@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import random
 import threading
 import time
 
@@ -36,14 +35,11 @@ def test_queue_starts_at_the_requested_track():
     assert PlayQueue(entries(4), start_track_id="unknown").start_index == 0
 
 
-def test_shuffle_reorders_keeps_every_track_and_puts_the_requested_one_first():
-    queue = PlayQueue(entries(20), shuffle=True, start_track_id="T7", rng=random.Random(4))
-    ids = [e.track_id for e in queue.entries]
-    assert ids[0] == "T7" and queue.start_index == 0
-    assert sorted(ids) == sorted(f"T{i}" for i in range(20))
-    assert ids != [f"T{i}" for i in range(20)]
-    same_seed = PlayQueue(entries(20), shuffle=True, start_track_id="T7", rng=random.Random(4))
-    assert [e.track_id for e in same_seed.entries] == ids
+def test_the_queue_keeps_the_order_it_is_given_and_starts_where_asked():
+    every = entries(20)
+    queue = PlayQueue([every[i] for i in (7, 2, 19, 0)], start_track_id="T19")
+    assert [e.track_id for e in queue.entries] == ["T7", "T2", "T19", "T0"]
+    assert queue.start_index == 2
 
 
 def test_a_repeated_track_keeps_both_positions_and_shares_its_offset():

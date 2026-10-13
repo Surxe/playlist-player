@@ -7,7 +7,6 @@ what it loaded: it maps mpv's ``playlist-pos`` back to a track ID. Pure data; no
 
 from __future__ import annotations
 
-import random
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
@@ -33,21 +32,12 @@ class PlayQueue:
         *,
         playlist_id: str | None = None,
         start_track_id: str | None = None,
-        shuffle: bool = False,
-        rng: random.Random | None = None,
     ) -> None:
-        ordered = list(entries)
-        if shuffle:
-            (rng or random.Random()).shuffle(ordered)
-            # A shuffled queue still starts with the track that was asked for.
-            first = next((e for e in ordered if e.track_id == start_track_id), None)
-            if first is not None:
-                ordered.remove(first)
-                ordered.insert(0, first)
+        """Entries in the order given: the caller decides any shuffle, and keeps it."""
         self.playlist_id = playlist_id
-        self._entries = ordered
+        self._entries = list(entries)
         self.start_index = 0
-        if start_track_id is not None and not shuffle:
+        if start_track_id is not None:
             self.start_index = self.index_of(start_track_id) or 0
 
     def __len__(self) -> int:

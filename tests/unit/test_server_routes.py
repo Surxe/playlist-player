@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 
 import pytest
 
@@ -14,6 +15,7 @@ from playlist_player.server.library import Library
 from playlist_player.server.overlay_config import OverlayConfig
 from playlist_player.server.routes import API, Routes
 from playlist_player.server.security import allowed_hosts, check_request
+from playlist_player.server.session import PlaybackSession
 from tests.support.library import JPEG, PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer
 
@@ -26,8 +28,10 @@ def player():
 @pytest.fixture
 def routes(store, player):
     build_library(store)
+    library = Library(store)
+    session = PlaybackSession(store, library, player, rng=random.Random(4))
     overlay = OverlayConfig(OverlaySettings.from_settings(load_settings()), store)
-    return Routes(Library(store), player, overlay)
+    return Routes(library, player, session, overlay)
 
 
 def get(routes, path):
@@ -159,7 +163,29 @@ def test_load_can_start_at_a_track_and_shuffle(routes, player):
         {"playlist_id": PLAYLIST_ID, "start_track_id": "TRK0002", "shuffle": True},
     )
     order = player.calls[-1][1]
-    assert order[0] == "TRK0002" and sorted(order) == [f"TRK000{i}" for i in range(4)]
+    assert sorted(order) == [f"TRK000{i}" for i in range(4)]
+    # Starting part-way through a shuffle starts where that track falls in the order.
+    assert player.calls[-1][2] == order.index("TRK0002")
+
+
+def test_the_shuffled_order_is_the_same_on_every_load_until_shuffle_changes(routes, player):
+    post(routes, "/player/load", {"playlist_id": PLAYLIST_ID, "shuffle": True})
+    first = player.calls[-1][1]
+    post(routes, "/player/load", {"playlist_id": PLAYLIST_ID, "shuffle": True})
+    assert player.calls[-1][1] == first
+    post(routes, "/player/load", {"playlist_id": PLAYLIST_ID, "shuffle": False})
+    assert player.calls[-1][1] == ["TRK0000", "TRK0001", "TRK0002", "TRK0003"]
+
+
+def test_session_shuffle_is_read_and_set_through_the_api(routes, store):
+    assert get(routes, "/session")[1]["shuffle"] is False
+    response, body = post(routes, "/session/shuffle", {"enabled": True})
+    assert response.status == 200 and body["shuffle"] is True
+    assert get(routes, "/session")[1]["shuffle"] is True
+    assert json.loads(store.session_json.read_text())["shuffle"] is True
+    assert post(routes, "/session/shuffle", {"enabled": "yes"})[0].status == 400
+    assert post(routes, "/session/shuffle", {})[0].status == 400
+    assert routes.dispatch("GET", API + "/session/shuffle").status == 405
 
 
 @pytest.mark.parametrize(
@@ -435,5 +461,6 @@ def test_overlay_endpoints_refuse_other_methods_and_report_a_failed_save(
 
 
 def test_without_an_overlay_store_the_endpoints_do_not_exist(store, player):
-    bare = Routes(Library(store), player)
+    library = Library(store)
+    bare = Routes(library, player, PlaybackSession(store, library, player))
     assert bare.dispatch("GET", API + "/overlay").status == 404

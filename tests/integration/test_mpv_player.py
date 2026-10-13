@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from playlist_player.errors import PlaybackError
 from playlist_player.models import LyricsKind, PlayerStatus
 from playlist_player.playback.mpv import MpvPlayer
 from playlist_player.playback.queue import PlayQueue, QueueEntry
@@ -343,3 +344,45 @@ def test_mpris_plugin_loads_and_its_playpause_reaches_our_state(make_player, ton
     finally:
         bus_process.terminate()
         bus_process.wait(timeout=5)
+
+
+def test_a_resumed_song_starts_paused_at_its_position_and_at_the_saved_volume(make_player, tones):
+    """What a restart does: volume first, then the song loaded paused and seeked to where it was."""
+    player, log = make_player()
+    player.set_volume(40)
+    player.load_queue(queue_of(tones, [30, 30, 30]), paused=True, position_s=12.5)
+    state = log.wait_for(paused_at("T0", 12.5), timeout=8)
+    time.sleep(0.4)
+    state = log.bus.current
+    assert state.status is PlayerStatus.PAUSED and state.track_id == "T0"
+    assert state.position_s == pytest.approx(12.5, abs=0.1)
+    assert state.volume == pytest.approx(40, abs=0.5)
+
+
+def test_a_resume_position_is_not_applied_to_a_later_track(make_player, tones):
+    player, log = make_player()
+    player.load_queue(queue_of(tones, [30, 30]), paused=False, position_s=20)
+    log.wait_for(playing("T0"), timeout=8)
+    player.next()
+    state = log.wait_for(playing("T1"), after=0, timeout=8)
+    time.sleep(0.5)
+    assert state.position_s < 3  # started from the beginning, not from 20 s
+
+
+def paused_at(track_id: str, position: float):
+    def check(state):
+        return (
+            state.track_id == track_id
+            and state.status is PlayerStatus.PAUSED
+            and state.position_s >= position - 0.2
+        )
+
+    return check
+
+
+def test_a_socket_path_too_long_for_the_system_is_one_clear_error(tmp_path):
+    deep = tmp_path / ("d" * 110) / "mpv.sock"
+    player = MpvPlayer(StateBus(), socket_path=deep, audio_output="null")
+    with pytest.raises(PlaybackError, match="socket path is too long"):
+        player.start()
+    assert not deep.parent.exists()  # refused before anything was created or started

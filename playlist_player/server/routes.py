@@ -25,6 +25,7 @@ from ..playback.base import Player
 from .library import Library
 from .overlay_config import MAX_PREVIEW_S, OverlayConfig
 from .security import JSON_TYPE
+from .session import PlaybackSession
 
 API = "/api/v1"
 EVENTS_PATH = f"{API}/events"
@@ -84,10 +85,15 @@ Handler = Callable[..., Response]
 
 class Routes:
     def __init__(
-        self, library: Library, player: Player, overlay: OverlayConfig | None = None
+        self,
+        library: Library,
+        player: Player,
+        session: PlaybackSession,
+        overlay: OverlayConfig | None = None,
     ) -> None:
         self._library = library
         self._player = player
+        self._session = session
         self._overlay = overlay
         segment = r"([^/]+)"
         self._table: list[tuple[str, re.Pattern[str], Handler]] = [
@@ -103,6 +109,8 @@ class Routes:
             ("POST", re.compile(rf"{API}/player/seek"), self._seek),
             ("POST", re.compile(rf"{API}/player/volume"), self._volume),
             ("POST", re.compile(rf"{API}/tracks/{segment}/offset"), self._offset),
+            ("GET", re.compile(rf"{API}/session"), self._session_get),
+            ("POST", re.compile(rf"{API}/session/shuffle"), self._session_shuffle),
         ]
         if overlay is not None:
             self._table += [
@@ -204,7 +212,7 @@ class Routes:
             raise ApiError(400, "start_track_id must be a track ID")
         if not isinstance(shuffle, bool):
             raise ApiError(400, "shuffle must be true or false")
-        queue = self._library.queue_for(playlist_id, start_track_id=start, shuffle=shuffle)
+        queue = self._session.queue_for(playlist_id, start_track_id=start, shuffle=shuffle)
         self._player.load_queue(queue)
         return Response.json({"ok": True, "queue_length": len(queue)})
 
@@ -260,3 +268,14 @@ class Routes:
         if not 0 <= seconds <= MAX_PREVIEW_S:
             raise ApiError(400, f"seconds must be between 0 and {MAX_PREVIEW_S:g}")
         return Response.json(self._overlay.preview(seconds))
+
+    # ------------------------------- session ------------------------------- #
+
+    def _session_get(self) -> Response:
+        return Response.json(self._session.document())
+
+    def _session_shuffle(self, body: dict[str, Any]) -> Response:
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ApiError(400, "enabled must be true or false")
+        return Response.json(self._session.set_shuffle(enabled))
