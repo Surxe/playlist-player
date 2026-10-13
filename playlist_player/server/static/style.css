@@ -141,7 +141,7 @@ ol { list-style: none; margin: 0; padding: 0; }
 #volume-row { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 #volume { width: 110px; accent-color: var(--accent); }
 
-#overlay-pane {
+#settings-pane {
   position: fixed;
   top: 52px;
   right: 12px;
@@ -155,16 +155,19 @@ ol { list-style: none; margin: 0; padding: 0; }
   border-radius: 8px;
   box-shadow: 0 8px 28px rgb(0 0 0 / 50%);
 }
-#overlay-pane[hidden] { display: none; }
-#overlay-pane h2 { margin: 0; font-size: 15px; font-weight: 600; }
-#overlay-pane p { margin: 8px 0; font-size: 12px; }
+#settings-pane[hidden] { display: none; }
+#settings-pane h2 { margin: 0; font-size: 15px; font-weight: 600; }
+#settings-pane h3 { margin: 0; font-size: 13px; font-weight: 600; }
+#settings-pane section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+#settings-close { margin-left: auto; }
+#settings-pane p { margin: 8px 0; font-size: 12px; }
 .pane-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .pane-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 button:disabled { opacity: 0.45; cursor: default; }
 button:disabled:hover { border-color: var(--line); }
 
-#overlay-form { margin-top: 8px; }
-#overlay-form .row {
+.settings-form { margin-top: 8px; }
+.settings-form .row {
   display: grid;
   grid-template-columns: 7.5em 1fr 1.8em 1.6em;
   gap: 8px;
@@ -172,19 +175,19 @@ button:disabled:hover { border-color: var(--line); }
   padding: 4px 6px;
   border-left: 2px solid transparent;
 }
-#overlay-form .row.overridden { border-left-color: var(--accent); background: #17283a; }
-#overlay-form .controls { display: flex; align-items: center; gap: 6px; min-width: 0; }
-#overlay-form input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
-#overlay-form input[type="number"] { width: 5.2em; }
-#overlay-form input[type="text"] { flex: 1; min-width: 0; }
-#overlay-form input[type="color"] { width: 34px; height: 26px; padding: 0; }
-#overlay-form input[type="number"], #overlay-form input[type="text"], #overlay-form input[type="color"] {
+.settings-form .row.overridden { border-left-color: var(--accent); background: #17283a; }
+.settings-form .controls { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.settings-form input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.settings-form input[type="number"] { width: 5.2em; }
+.settings-form input[type="text"] { flex: 1; min-width: 0; }
+.settings-form input[type="color"] { width: 34px; height: 26px; padding: 0; }
+.settings-form input[type="number"], .settings-form input[type="text"], .settings-form input[type="color"] {
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 3px 6px;
 }
-#overlay-form .drop { padding: 0 6px; color: var(--muted); }
+.settings-form .drop { padding: 0 6px; color: var(--muted); }
 @media (max-width: 760px) {
   main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
   #tracks-pane { border-right: 0; border-bottom: 1px solid var(--line); }

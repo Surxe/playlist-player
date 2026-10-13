@@ -199,6 +199,7 @@ def test_shuffle_refuses_what_it_cannot_shuffle(routes, store):
 def test_the_session_document_says_what_would_be_resumed(routes, player):
     assert get(routes, "/session")[1] == {
         "playlist_id": None, "track_id": None, "position_s": 0.0, "volume": None,
+        "settings": {"fade_in_s": 0.0},
     }  # fmt: skip
     post(routes, "/player/load", {"playlist_id": PLAYLIST_ID})
     assert get(routes, "/session")[1]["playlist_id"] == PLAYLIST_ID
@@ -214,7 +215,7 @@ def test_the_page_is_the_one_this_process_started_with(routes, monkeypatch, tmp_
     before = routes.dispatch("GET", "/static/app.js").body
     replaced = tmp_path / "static"
     replaced.mkdir()
-    for name in ("index.html", "app.js", "clock.js", "overlay.js", "style.css"):
+    for name in ("index.html", "app.js", "clock.js", "overlay.js", "settings.js", "style.css"):
         (replaced / name).write_text("// a later version")
     monkeypatch.setattr(routes_module, "_STATIC_DIR", replaced)
     assert routes.dispatch("GET", "/static/app.js").body == before
@@ -366,7 +367,8 @@ def test_static_files_come_from_an_allowlist(routes):
     assert page.status == 200 and page.content_type.startswith("text/html")
     assert b'src="/static/app.js"' in page.body
     for name, kind in [("app.js", "text/javascript"), ("clock.js", "text/javascript"),
-                       ("overlay.js", "text/javascript"), ("style.css", "text/css")]:  # fmt: skip
+                       ("overlay.js", "text/javascript"), ("settings.js", "text/javascript"),
+                       ("style.css", "text/css")]:  # fmt: skip
         response = routes.dispatch("GET", f"/static/{name}")
         assert response.status == 200 and response.content_type.startswith(kind)
     assert routes.dispatch("GET", "/static/index.html").status == 404
@@ -517,3 +519,15 @@ def test_an_offset_is_kept_per_track_and_comes_back_after_a_restart(store, playe
     _, track = get(second, "/tracks/TRK0001")
     assert track["offset_ms"] == 250
     assert second.dispatch("GET", API + "/tracks/TRK0001/lyrics").status == 200
+
+
+def test_playback_settings_are_changed_through_the_api_and_checked(routes, store):
+    response, body = post(routes, "/session/settings", {"fade_in_s": 3})
+    assert response.status == 200 and body["settings"] == {"fade_in_s": 3.0}
+    assert get(routes, "/session")[1]["settings"] == {"fade_in_s": 3.0}
+    assert json.loads(store.session_json.read_text())["settings"] == {"fade_in_s": 3.0}
+    for bad in ({"fade_in_s": 31}, {"fade_in_s": "3"}, {"cache_dir": "/tmp"}):
+        response, answer = post(routes, "/session/settings", bad)
+        assert response.status == 400 and "error" in answer
+    assert get(routes, "/session")[1]["settings"] == {"fade_in_s": 3.0}
+    assert routes.dispatch("GET", API + "/session/settings").status == 405

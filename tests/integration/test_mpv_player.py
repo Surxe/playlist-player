@@ -18,6 +18,7 @@ import pytest
 from playlist_player.errors import PlaybackError
 from playlist_player.models import LyricsKind, PlayerStatus
 from playlist_player.playback.mpv import MpvPlayer
+from playlist_player.playback.mpv_ipc import MpvCommandError
 from playlist_player.playback.queue import PlayQueue, QueueEntry
 from playlist_player.playback.state import StateBus
 from tests.support.audio import tone
@@ -491,3 +492,82 @@ def test_mpv_runs_in_its_own_process_group(make_player):
     assert os.getpgid(player._process.pid) == player._process.pid
     assert os.getpgid(player._process.pid) != os.getpgid(0)
     assert not any(arg.startswith("--volume") for arg in player.command_line())  # none set yet
+
+
+def gain(player) -> float:
+    return float(player._command("get_property", "volume-gain"))
+
+
+def test_a_fade_in_is_silent_until_playback_starts_then_rises_and_leaves_the_volume_alone(
+    make_player, tones
+):
+    player, log = make_player()
+    player.set_volume(40)
+    player.load_queue(queue_of(tones, [30]), paused=True)
+    log.wait_for(lambda s: s.status is PlayerStatus.PAUSED and s.track_id == "T0")
+    assert gain(player) == 0.0  # nothing asked for yet
+
+    player.fade_in(1.0)
+    time.sleep(0.3)
+    assert gain(player) == pytest.approx(-60.0)  # silent, and staying so while paused
+
+    player.play()
+    started = time.monotonic()
+    log.wait_for(playing("T0"))
+    readings = []
+    while time.monotonic() - started < 1.8:
+        readings.append((time.monotonic() - started, gain(player)))
+        time.sleep(0.04)
+    levels = [level for _, level in readings]
+    assert levels == sorted(levels), "the level went down during a fade-in"
+    assert levels[0] < -12 and levels[-1] == 0.0
+    # Half-way through the fade the sound is at half amplitude, about -6 dB.
+    midway = min(readings, key=lambda reading: abs(reading[0] - 0.5))[1]
+    assert -12 < midway < -3, midway
+    reached = next(t for t, level in readings if level == 0.0)
+    assert 0.8 < reached < 1.5, reached
+    # The listener's volume was never touched, so nothing has to put it back.
+    assert {s.volume for s in log.states if s.volume is not None} == {100.0, 40.0}
+    assert log.bus.current.volume == 40
+
+
+def test_a_fade_in_waits_while_paused_and_carries_on_from_where_it_was(make_player, tones):
+    player, log = make_player()
+    player.load_queue(queue_of(tones, [30]), paused=True)
+    state = log.wait_for(lambda s: s.status is PlayerStatus.PAUSED and s.track_id == "T0")
+    player.fade_in(2.0)
+    player.play()
+    log.wait_for(playing("T0"), after=state.version)
+    time.sleep(0.6)
+    player.pause()
+    time.sleep(0.3)
+    held = gain(player)
+    time.sleep(0.6)
+    assert gain(player) == held and -60 < held < 0  # part-way, and not moving
+    player.play()
+    time.sleep(0.5)
+    assert held < gain(player) < 0  # rising again, not started over and not finished
+    time.sleep(1.6)
+    assert gain(player) == 0.0
+
+
+def test_a_fade_of_no_length_and_an_mpv_without_the_control_do_nothing(
+    make_player, tones, monkeypatch, capsys
+):
+    player, log = make_player()
+    player.fade_in(0)
+    assert gain(player) == 0.0 and player._fade_s is None
+
+    real = player._command
+
+    def old_mpv(*args):
+        if "volume-gain" in args:
+            raise MpvCommandError("mpv refused ['set_property', 'volume-gain']: property not found")
+        return real(*args)
+
+    monkeypatch.setattr(player, "_command", old_mpv)
+    player.fade_in(3.0)  # must not raise
+    assert player._fade_s is None
+    assert "no fade-in with this mpv" in capsys.readouterr().err
+    player.load_queue(queue_of(tones, [5]))
+    log.wait_for(playing("T0"))  # and playback is unaffected

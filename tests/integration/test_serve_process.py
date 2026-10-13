@@ -201,3 +201,45 @@ def test_if_mpv_dies_its_replacement_has_the_same_volume(serve, store):
     assert state["volume"] == 33.0
     assert run.signal_group(signal.SIGTERM) == 0
     assert saved(store)["volume"] == 33.0
+
+
+def mpv_property(run: Serve, name: str):
+    """Ask this daemon's mpv for a property directly, over its IPC socket."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as link:
+        link.settimeout(3)
+        link.connect(str(run.socket_path))
+        link.sendall(
+            json.dumps({"command": ["get_property", name], "request_id": 7}).encode() + b"\n"
+        )
+        buffer = b""
+        while True:
+            buffer += link.recv(4096)
+            for line in buffer.split(b"\n")[:-1]:
+                reply = json.loads(line)
+                if reply.get("request_id") == 7:
+                    assert reply["error"] == "success", reply
+                    return reply["data"]
+
+
+def test_with_the_fade_in_set_a_restart_starts_silent_and_comes_up_when_played(serve, store):
+    first = serve()
+    play_some(first)
+    first.request("POST", "/session/settings", {"fade_in_s": 1.5})
+    assert mpv_property(first, "volume-gain") == 0.0  # set for the next start, not this one
+    assert first.signal_group(signal.SIGINT) == 0
+
+    second = serve()
+    state = second.wait_for(lambda s: s["track_id"] == "TRK0001" and s["status"] == "paused")
+    assert state["volume"] == 33.0  # the volume is as it was left; the fade is separate
+    assert mpv_property(second, "volume-gain") == pytest.approx(-60.0)
+
+    second.request("POST", "/player/play", {})
+    second.wait_for(lambda s: s["status"] == "playing")
+    time.sleep(0.5)
+    part_way = mpv_property(second, "volume-gain")
+    assert -60 < part_way < 0
+    time.sleep(1.6)
+    assert mpv_property(second, "volume-gain") == 0.0
+    assert second.state()["volume"] == 33.0
+    assert second.signal_group(signal.SIGINT) == 0
+    assert saved(store)["volume"] == 33.0 and saved(store)["settings"] == {"fade_in_s": 1.5}

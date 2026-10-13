@@ -1,5 +1,6 @@
-// The overlay settings panel. It edits the daemon's overlay settings document, which a
-// running overlay follows live, so moving a slider moves the lyric line on screen.
+// The overlay section of the settings pane. It edits the daemon's overlay settings
+// document, which a running overlay follows live, so moving a slider moves the lyric
+// line on screen. The pane itself (opening, closing) belongs to settings.js.
 //
 // The daemon owns every rule about what a setting may be and sends them with the
 // document (`rules`); this file only decides how each kind of setting is drawn. Values
@@ -80,7 +81,6 @@ function node(tag, attributes = {}, ...children) {
 export function initOverlayPanel({ getJson, postJson }) {
   const $ = (id) => document.getElementById(id);
   const els = {
-    open: $("overlay-open"), pane: $("overlay-pane"), close: $("overlay-close"),
     status: $("overlay-status"), preview: $("overlay-preview"), form: $("overlay-form"),
     reset: $("overlay-reset"),
     note: $("overlay-note"),
@@ -246,8 +246,8 @@ export function initOverlayPanel({ getJson, postJson }) {
 
   // -------------------------------- wiring ------------------------------- //
 
-  async function show() {
-    els.pane.hidden = false;
+  // The settings pane was opened: fetch the rules the first time, and draw the controls.
+  async function opened() {
     if (rules) return;
     try {
       const described = await getJson("/overlay");
@@ -259,13 +259,11 @@ export function initOverlayPanel({ getJson, postJson }) {
     }
   }
 
-  function hide() {
-    els.pane.hidden = true;
+  // The settings pane was closed: a sample line must not stay up with nobody looking.
+  function closed() {
     if (els.preview.checked) setPreview(false);
   }
 
-  els.open.addEventListener("click", () => (els.pane.hidden ? show() : hide()));
-  els.close.addEventListener("click", hide);
   els.preview.addEventListener("change", () => setPreview(els.preview.checked));
   els.form.addEventListener("submit", (event) => event.preventDefault());
   els.reset.addEventListener("click", async () => {
@@ -276,6 +274,8 @@ export function initOverlayPanel({ getJson, postJson }) {
 
   return {
     apply,
+    opened,
+    closed,
     disconnected() {
       // A restarted daemon counts versions from 1 again; do not mistake it for stale.
       if (doc) doc = { ...doc, version: 0 };

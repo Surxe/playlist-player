@@ -23,9 +23,11 @@ programs as whoever owns mpv, so it is created 0600 inside a 0700 directory.
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import queue
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -45,6 +47,12 @@ _PREV_RESTARTS_AFTER_S = 3.0
 
 # sun_path is 108 bytes including the terminating NUL.
 _MAX_SOCKET_PATH = 108
+
+# A fade-in starts this far below the volume, in decibels: silence, for practical
+# purposes. It is applied through mpv's ``volume-gain``, which sits on top of ``volume``,
+# so the volume the listener set is never altered and never has to be put back.
+_FADE_FLOOR_DB = -60.0
+_FADE_STEP_S = 0.05
 
 _CLOSED = object()  # inbox token: the IPC connection ended
 _REFRESH = object()  # inbox token: publish a fresh snapshot now
@@ -83,6 +91,10 @@ class MpvPlayer:
         self._resume_at: float | None = None
         # True while the playlist is being rearranged; nothing is published meanwhile.
         self._reordering = False
+        # A fade-in waiting for playback to start, as its length in seconds; and a
+        # counter that a newer fade bumps so that an older one still running gives way.
+        self._fade_s: float | None = None
+        self._fade_run = 0
         # The volume last set or reported. An mpv started later is started at it, so a
         # player that had to be restarted does not come back at mpv's default of 100.
         self._volume: float | None = None
@@ -313,6 +325,55 @@ class MpvPlayer:
         self._volume = volume
         self._command("set_property", "volume", volume)
 
+    def fade_in(self, seconds: float) -> None:
+        if seconds <= 0:
+            return
+        with self._lock:
+            try:
+                # Silent from now, so that however playback is started (the page, the
+                # media keys), its first moment is already quiet.
+                self._command("set_property", "volume-gain", _FADE_FLOOR_DB)
+            except MpvCommandError as exc:
+                # An mpv older than 0.37 has no volume-gain. Play on without the fade.
+                print(f"playlist_player: no fade-in with this mpv: {exc}", file=sys.stderr)
+                return
+            self._fade_run += 1
+            self._fade_s = float(seconds)
+
+    def _start_fade(self) -> None:
+        """Playback has started with a fade-in waiting: run it."""
+        seconds, self._fade_s = self._fade_s, None
+        if seconds is None:
+            return
+        run = self._fade_run
+        threading.Thread(
+            target=self._run_fade, args=(seconds, run), name="mpv-fade", daemon=True
+        ).start()
+
+    def _run_fade(self, seconds: float, run: int) -> None:
+        """Raise the gain from silence to nothing over ``seconds`` of actual playback.
+
+        The level rises evenly in amplitude, which is what a fade sounds like; in
+        decibels that is steep at first and gentle at the end. Time spent paused or
+        buffering does not count, so a fade that is interrupted carries on where it was.
+        """
+        played = 0.0
+        last = time.monotonic()
+        while not self._closing and run == self._fade_run:
+            time.sleep(_FADE_STEP_S)
+            now = time.monotonic()
+            if self._reducer.status() is PlayerStatus.PLAYING:
+                played += now - last
+            last = now
+            share = min(1.0, played / seconds)
+            gain = 0.0 if share >= 1 else max(_FADE_FLOOR_DB, 20 * math.log10(max(share, 1e-3)))
+            try:
+                self._command("set_property", "volume-gain", gain)
+            except (MpvCommandError, PlaybackError):
+                return  # mpv went away; the one that replaces it starts with no gain set
+            if share >= 1:
+                return
+
     def set_offset(self, track_id: str, offset_ms: int) -> None:
         if self._reducer.queue.set_offset(track_id, offset_ms):
             self._inbox.put(_REFRESH)
@@ -343,6 +404,8 @@ class MpvPlayer:
         state = self.bus.publish(self._reducer.snapshot(position, captured_at))
         if state.status is PlayerStatus.PLAYING:
             self._restart_available = True  # mpv is evidently healthy again
+            if self._fade_s is not None:
+                self._start_fade()
 
     def _state_loop(self) -> None:
         last_publish = time.monotonic()
@@ -413,6 +476,8 @@ class MpvPlayer:
             # The new mpv has an empty playlist; the old queue is gone with the old process.
             self._reducer.set_queue(PlayQueue(()))
             self._resume_at = None
+            self._fade_s = None  # the new mpv has no gain set; there is nothing to raise
+            self._fade_run += 1
             self._reducer.set_fatal(None)
         self._publish()
         return True
