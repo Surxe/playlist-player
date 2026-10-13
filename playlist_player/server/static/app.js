@@ -2,7 +2,7 @@
 // never reads files. Playback state arrives on one event stream; between snapshots the
 // position is extrapolated locally (see clock.js), so nothing here polls.
 
-import { currentIndex, formatTime, positionAt } from "./clock.js";
+import { currentIndex, formatTime, lineProgress, positionAt } from "./clock.js";
 import { initOverlayPanel } from "./overlay.js";
 
 const API = "/api/v1";
@@ -186,7 +186,8 @@ async function loadLyrics(trackId) {
   lyrics.kind = data.kind;
   if (data.kind === "synced") {
     lyrics.times = data.lines.map((line) => line.t_ms);
-    lyrics.rows = data.lines.map((line) => element("li", "", line.text));
+    // A line with no words marks a pause in the singing; it gets no progress bar.
+    lyrics.rows = data.lines.map((line) => element("li", line.text.trim() ? "" : "pause", line.text));
     els.lyrics.replaceChildren(...lyrics.rows);
     els.lyricsNote.textContent =
       data.timing_confidence === "low" ? "Timing may be off; nudge the offset." : "";
@@ -208,6 +209,23 @@ function showLine(index) {
     row.classList.toggle("past", i < index);
   });
   lyrics.rows[Math.max(index, 0)]?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+// The bar under the current line: how far playback is from that line's start to the
+// next line's. It is what makes an offset readable: a bar that is already part-filled
+// when the words begin means the lyrics are running ahead of the song.
+function showProgress(index, positionS) {
+  const row = lyrics.rows[index];
+  if (!row || row.classList.contains("pause")) return;
+  const durationMs = state.duration_s ? state.duration_s * 1000 : null;
+  const progress = lineProgress(
+    lyrics.times, index, positionS * 1000, LEAD_MS, state.offset_ms, durationMs,
+  );
+  const value = progress === null ? "" : progress.toFixed(4);
+  if (row.dataset.progress === value) return; // paused, or between frames: nothing to redraw
+  row.dataset.progress = value;
+  row.classList.toggle("timed", progress !== null);
+  row.style.setProperty("--progress", value || "0");
 }
 
 // ---------------------------------- state --------------------------------- //
@@ -257,7 +275,9 @@ function tick() {
     if (!seeking) els.seek.value = String(position);
     els.elapsed.textContent = formatTime(position);
     if (lyrics.kind === "synced" && lyrics.trackId === state.track_id) {
-      showLine(currentIndex(lyrics.times, position * 1000, LEAD_MS, state.offset_ms));
+      const index = currentIndex(lyrics.times, position * 1000, LEAD_MS, state.offset_ms);
+      showLine(index);
+      showProgress(index, position);
     }
   }
   requestAnimationFrame(tick);

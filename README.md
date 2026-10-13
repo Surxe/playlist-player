@@ -115,6 +115,12 @@ from mpv. Pick a playlist, click a track, and the lyric pane follows the song; t
 offset buttons shift a track's lyrics earlier or later and the value is remembered in
 `state/`. Space toggles, left and right seek five seconds, up and down change track.
 
+The bar under the current lyric line fills from that line's start to the start of the
+next one, which makes an offset readable: if the bar is already part-filled when the words
+begin, the lyrics are ahead of the song, and if the words begin before it starts, they are
+behind. Lyric files only record when each line starts, so the bar also runs through any
+pause or instrumental that follows the words.
+
 **Shuffle** puts the playlist shown in a new random order and keeps it. The track list
 is redrawn in that order, it is the order the playlist plays in from then on, and it is
 still there after a restart. If that playlist is playing, the queue is rearranged at once
