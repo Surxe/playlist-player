@@ -341,11 +341,11 @@ def test_saving_and_shuffling_from_several_threads_leave_a_whole_file(store, lib
 
 def test_the_fade_in_is_off_until_it_is_set_and_then_it_is_kept(store, library):
     session, _ = session_on(store, library)
-    assert session.document()["settings"] == {"fade_in_s": 0.0}
-    assert session.set_settings({"fade_in_s": 3.5})["settings"] == {"fade_in_s": 3.5}
+    assert session.document()["settings"]["fade_in_s"] == 0.0
+    assert session.set_settings({"fade_in_s": 3.5})["settings"]["fade_in_s"] == 3.5
     assert saved(store)["settings"] == {"fade_in_s": 3.5}
-    assert session_on(store, library)[0].document()["settings"] == {"fade_in_s": 3.5}
-    assert session.set_settings({"fade_in_s": 0})["settings"] == {"fade_in_s": 0.0}
+    assert session_on(store, library)[0].document()["settings"]["fade_in_s"] == 3.5
+    assert session.set_settings({"fade_in_s": 0})["settings"]["fade_in_s"] == 0.0
 
 
 @pytest.mark.parametrize(
@@ -365,7 +365,7 @@ def test_a_setting_that_cannot_be_taken_changes_nothing(store, library, changes,
     session.set_settings({"fade_in_s": 4})
     with pytest.raises(SettingError, match=says):
         session.set_settings(changes)
-    assert session.document()["settings"] == {"fade_in_s": 4.0}
+    assert session.document()["settings"]["fade_in_s"] == 4.0
 
 
 def test_a_start_arms_the_fade_in_after_the_song_is_loaded_and_only_when_it_is_on(store, library):
@@ -399,5 +399,103 @@ def test_a_stored_fade_in_that_makes_no_sense_counts_as_off(store, library):
         store.write_json(store.session_json, {"settings": stored})
         session, player = session_on(store, library)
         session.resume()
-        assert session.document()["settings"] == {"fade_in_s": 0.0}
+        assert session.document()["settings"]["fade_in_s"] == 0.0
         assert player.calls == []
+
+
+# ------------------------------ track filters ---------------------------- #
+
+SYNCED_IDS = ["TRK0000", "TRK0001", "TRK0002"]  # TRK0003 has plain lyrics only
+
+
+def listed(session, library) -> list[str]:
+    return [t["id"] for t in session.arranged(library.playlist(PLAYLIST_ID))["tracks"]]
+
+
+def test_every_track_is_included_until_a_filter_is_turned_off(store, library):
+    session, _ = session_on(store, library)
+    settings = session.document()["settings"]
+    assert settings["include_without_lyrics"] is True
+    assert settings["include_without_audio"] is True
+    assert listed(session, library) == [*PLAYABLE, "TRK0004"]
+    assert session.arranged(library.playlist(PLAYLIST_ID))["hidden"] == 0
+
+
+def test_without_lyrics_off_leaves_those_tracks_out_of_the_list_and_the_queue(store, library):
+    session, _ = session_on(store, library)
+    session.set_settings({"include_without_lyrics": False})
+    assert ids(session.queue_for(PLAYLIST_ID)) == SYNCED_IDS
+    assert listed(session, library) == [*SYNCED_IDS, "TRK0004"]
+    assert session.arranged(library.playlist(PLAYLIST_ID))["hidden"] == 1
+    # It is kept, and a restart plays by it.
+    assert saved(store)["settings"] == {"include_without_lyrics": False}
+    assert ids(session_on(store, library)[0].queue_for(PLAYLIST_ID)) == SYNCED_IDS
+
+
+def test_without_audio_off_only_changes_what_is_listed(store, library):
+    session, _ = session_on(store, library)
+    session.set_settings({"include_without_audio": False})
+    assert listed(session, library) == PLAYABLE
+    assert ids(session.queue_for(PLAYLIST_ID)) == PLAYABLE
+    session.set_settings({"include_without_lyrics": False})
+    assert listed(session, library) == SYNCED_IDS
+    assert session.arranged(library.playlist(PLAYLIST_ID))["hidden"] == 2
+
+
+def test_a_track_that_is_left_out_keeps_its_place_in_a_kept_order(store, library):
+    session, _ = session_on(store, library)
+    order = session.shuffle(PLAYLIST_ID)
+    session.set_settings({"include_without_lyrics": False})
+    assert ids(session.queue_for(PLAYLIST_ID)) == [t for t in order if t != "TRK0003"]
+    assert saved(store)["orders"] == {PLAYLIST_ID: order}
+    session.set_settings({"include_without_lyrics": True})
+    assert ids(session.queue_for(PLAYLIST_ID)) == order
+
+
+def test_changing_a_filter_brings_the_playing_queue_up_to_date(store, library):
+    session, player = session_on(store, library)
+    player.load_queue(session.queue_for(PLAYLIST_ID, start_track_id="TRK0001"))
+    session.set_settings({"include_without_lyrics": False})
+    assert player.calls[-1] == ("reorder", SYNCED_IDS)
+    assert player.bus.current.track_id == "TRK0001"
+    session.set_settings({"include_without_lyrics": True})
+    assert player.calls[-1] == ("reorder", PLAYABLE)
+    # A setting that is not a filter, or a filter set to what it was, leaves the queue alone.
+    calls = len(player.calls)
+    session.set_settings({"fade_in_s": 2, "include_without_lyrics": True})
+    assert len(player.calls) == calls
+
+
+def test_the_song_that_is_playing_or_asked_for_stays_even_if_the_filter_leaves_it_out(
+    store, library
+):
+    session, player = session_on(store, library)
+    player.load_queue(session.queue_for(PLAYLIST_ID, start_track_id="TRK0003"))
+    session.set_settings({"include_without_lyrics": False})
+    assert player.calls[-1] == ("reorder", ["TRK0000", "TRK0001", "TRK0002", "TRK0003"])
+    assert player.bus.current.track_id == "TRK0003"
+    # So a restart can still resume it.
+    assert ids(session.queue_for(PLAYLIST_ID, start_track_id="TRK0003"))[-1] == "TRK0003"
+
+
+def test_a_playlist_with_nothing_left_to_play_is_refused_with_the_reason(store, library):
+    session, _ = session_on(store, library)
+    for tid in SYNCED_IDS:
+        assets.clear_lyrics(store, tid)
+    session.set_settings({"include_without_lyrics": False})
+    with pytest.raises(NotInCacheError, match="left out by a setting"):
+        session.queue_for(PLAYLIST_ID)
+
+
+@pytest.mark.parametrize("value", [1, 0, "false", None])
+def test_a_filter_is_true_or_false_and_nothing_else(store, library, value):
+    session, _ = session_on(store, library)
+    with pytest.raises(SettingError, match="must be true or false"):
+        session.set_settings({"include_without_audio": value})
+    assert session.document()["settings"]["include_without_audio"] is True
+
+
+def test_a_stored_filter_that_makes_no_sense_counts_as_on(store, library):
+    store.write_json(store.session_json, {"settings": {"include_without_lyrics": "no"}})
+    session, _ = session_on(store, library)
+    assert session.document()["settings"]["include_without_lyrics"] is True

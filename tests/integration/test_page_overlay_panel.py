@@ -426,4 +426,32 @@ def test_the_fade_in_setting_is_shown_and_saved_from_the_settings_pane(daemon, t
     said = " ".join(results[-1].split())
     assert "the music fades in over this many seconds" in said
     assert "A change applies the next time it starts" in said and "daemon" not in said
-    assert daemon.session.document()["settings"] == {"fade_in_s": 6.5}
+    assert daemon.session.document()["settings"]["fade_in_s"] == 6.5
+
+
+def test_the_track_switches_take_tracks_out_of_the_list_and_put_them_back(daemon, tmp_path):
+    rows = "[...document.querySelectorAll('#tracks li')].map((li) => li.dataset.id)"
+    shot = tmp_path / "tracks.png"
+    results = drive(daemon, tmp_path, [
+        *OPEN,
+        {"wait": "t.el('include-without-lyrics').checked"},
+        {"eval": "t.el('include-without-audio').checked"},
+        {"eval": "t.el('include-without-lyrics').click()"},
+        {"wait": "document.querySelectorAll('#tracks li').length === 4"},
+        {"eval": rows},
+        {"eval": "t.text('coverage')"},
+        {"eval": "t.el('include-without-audio').click()"},
+        {"wait": "document.querySelectorAll('#tracks li').length === 3"},
+        {"screenshot": str(shot)},
+        {"eval": "t.el('include-without-lyrics').click()"},
+        {"wait": "document.querySelectorAll('#tracks li').length === 4"},
+        {"eval": rows},
+    ])[len(OPEN):]  # fmt: skip
+    assert results[1] is True
+    assert results[4] == ["TRK0000", "TRK0001", "TRK0002", "TRK0004"]
+    assert "1 left out by settings" in results[5]
+    assert results[-1] == ["TRK0000", "TRK0001", "TRK0002", "TRK0003"]
+    settings = daemon.session.document()["settings"]
+    assert settings["include_without_lyrics"] is True
+    assert settings["include_without_audio"] is False
+    assert shot.stat().st_size > 0

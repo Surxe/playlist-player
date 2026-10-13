@@ -67,6 +67,22 @@
       <p id="playback-note" class="muted" role="status"></p>
     </section>
 
+    <section id="track-settings" aria-label="Tracks">
+      <div class="pane-head">
+        <h3>Tracks</h3>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="include-without-lyrics"> Include tracks without synced lyrics
+      </label>
+      <label class="check">
+        <input type="checkbox" id="include-without-audio"> Include tracks without audio
+      </label>
+      <p class="muted">A track that is not included is left out of the track list, and
+        tracks without synced lyrics are skipped when playing. Tracks without audio can
+        never be played; this only shows or hides them. A change applies at once.</p>
+      <p id="track-note" class="muted" role="status"></p>
+    </section>
+
     <section id="overlay-settings" aria-label="Overlay">
       <div class="pane-head">
         <h3>Overlay</h3>

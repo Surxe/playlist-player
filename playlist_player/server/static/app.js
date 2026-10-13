@@ -4,7 +4,7 @@
 
 import { currentIndex, formatTime, lineProgress, positionAt } from "./clock.js";
 import { initOverlayPanel } from "./overlay.js";
-import { initPlaybackSettings, initSettingsPane } from "./settings.js";
+import { initPlaybackSettings, initSettingsPane, initTrackSettings } from "./settings.js";
 
 const API = "/api/v1";
 // Show a line slightly before its timestamp; it reads better than exactly on it.
@@ -66,7 +66,11 @@ async function postJson(path, body = {}) {
 }
 
 const overlayPanel = initOverlayPanel({ getJson, postJson });
-initSettingsPane([initPlaybackSettings({ getJson, postJson }), overlayPanel]);
+initSettingsPane([
+  initPlaybackSettings({ getJson, postJson }),
+  initTrackSettings({ getJson, postJson, changed: () => playlist && showPlaylist(playlist.id) }),
+  overlayPanel,
+]);
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -113,7 +117,8 @@ async function showPlaylist(id) {
   tracksById = new Map(playlist.tracks.map((t) => [t.id, t]));
   const c = playlist.coverage;
   els.coverage.textContent =
-    `${c.tracks} tracks, ${c.audio} with audio, ${c.synced} with synced lyrics`;
+    `${c.tracks} tracks, ${c.audio} with audio, ${c.synced} with synced lyrics` +
+    (playlist.hidden ? `, ${playlist.hidden} left out by settings` : "");
   els.tracks.replaceChildren(...playlist.tracks.map(trackRow));
   els.unshuffle.hidden = !playlist.shuffled;
   markCurrentTrack();
