@@ -108,7 +108,7 @@ class GtkLayerRenderer:
             f"0 -2px 0 {o}, 0 2px 0 {o}, -2px 0 0 {o}, 2px 0 0 {o}, 0 0 6px {o}; }}\n"
         )
         self._css.load_from_string(css)
-        self._set_font(self._line, 1.0)
+        self._set_font(self._line, 1.0, self._shown)
         self._set_font(self._next, _NEXT_LINE_SCALE)
 
     @staticmethod
@@ -125,12 +125,23 @@ class GtkLayerRenderer:
             getattr(label, f"set_margin_{side}")(_PADDING_PX)
         return label
 
-    def _set_font(self, label: Gtk.Label, scale: float) -> None:
+    def _attributes(self, scale: float, view: OverlayView | None = None) -> Pango.AttrList:
+        """The font at ``scale``, and the underline under the word ``view`` names."""
         description = Pango.FontDescription.from_string(self._style.font)
         description.set_size(int(self._style.font_size * scale * Pango.SCALE))
         attributes = Pango.AttrList()
         attributes.insert(Pango.attr_font_desc_new(description))
-        label.set_attributes(attributes)
+        if view is not None and view.underline is not None:
+            start, end = view.underline
+            underline = Pango.attr_underline_new(Pango.Underline.SINGLE)
+            # Pango counts in bytes of UTF-8, the view in characters.
+            underline.start_index = len(view.text[:start].encode())
+            underline.end_index = len(view.text[:end].encode())
+            attributes.insert(underline)
+        return attributes
+
+    def _set_font(self, label: Gtk.Label, scale: float, view: OverlayView | None = None) -> None:
+        label.set_attributes(self._attributes(scale, view))
         # A wrapping label's natural width is its whole text, and the only cap GTK offers
         # is in characters. GTK sizes those characters with the widget's own style font,
         # not the font set through attributes above, so convert the pixel limit with the
@@ -293,12 +304,15 @@ class GtkLayerRenderer:
             self._window.set_visible(False)
             return
         self._line.set_label(view.text)
+        self._line.set_attributes(self._attributes(1.0, view))
         self._next.set_label(view.next_text)
         self._next.set_visible(bool(view.next_text))
         if not previous.visible or previous.text != view.text:
             self._fade_in()
-        if previous.visible:
-            self._refit()  # changed in place: a window just being shown sizes itself
+        # Changed in place: a window just being shown sizes itself. An underline moving
+        # to the next word changes no size, so it is not a reason to resize.
+        if previous.visible and (previous.text, previous.next_text) != (view.text, view.next_text):
+            self._refit()
         self._window.set_visible(True)
 
     def _fade_in(self) -> None:
@@ -338,9 +352,18 @@ class GtkLayerRenderer:
             "mapped": bool(window.get_mapped()),
             "text": self._line.get_label() if window.get_mapped() else "",
             "next_text": self._next.get_label() if self._next.get_visible() else "",
+            "underlined": self._underlined() if window.get_mapped() else "",
             "width": window.get_width(),
             "height": window.get_height(),
         }
+
+    def _underlined(self) -> str:
+        """The text the line label draws an underline under, read back from the label."""
+        text = self._line.get_label().encode()
+        for attribute in self._line.get_attributes().get_attributes():
+            if attribute.klass.type == Pango.AttrType.UNDERLINE:
+                return text[attribute.start_index : attribute.end_index].decode()
+        return ""
 
     def snapshot(self, view: OverlayView, path: Path) -> None:
         """Show ``view``, wait for it to be drawn, save what was drawn, and return.

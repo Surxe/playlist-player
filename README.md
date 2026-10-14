@@ -133,6 +133,14 @@ begin, the lyrics are ahead of the song, and if the words begin before it starts
 behind. Lyric files only record when each line starts, so the bar also runs through any
 pause or instrumental that follows the words.
 
+**Underline word** (in the overlay settings, off by default) underlines the word being
+sung, in the overlay and in the lyric pane. Lyric files do not time words, so this is an
+estimate: each word gets a share of its line by its syllables, and a line that lasts much
+longer than its syllables would take at the pace of the lines around it is taken to end
+early, with nothing underlined for the rest (an instrumental, usually). It follows the
+same clock as the line, so it is only as good as the track's offset, and it cannot know
+about uneven phrasing or a note held at the end of a line.
+
 **Shuffle** puts the playlist shown in a new random order and keeps it. The track list
 is redrawn in that order, it is the order the playlist plays in from then on, and it is
 still there after a restart. If that playlist is playing, the queue is rearranged at once
@@ -380,6 +388,10 @@ deliberately not registered, so a token cannot end up on a command line.
 * **PLAYLIST_PLAYER_OVERLAY_FADE_MS** - Fade duration when a line appears or disappears.
   - Default: `"120"`
   - Command line: `--overlay-fade-ms`
+
+* **PLAYLIST_PLAYER_OVERLAY_UNDERLINE_WORD** - Underline the word being sung, in the overlay and on the page. The word is estimated from the line timing, so it needs the track's offset to be right.
+  - Default: `"false"`
+  - Command line: `--overlay-underline-word`
 
 
 <!-- END_GENERATED_OPTIONS -->

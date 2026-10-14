@@ -89,10 +89,24 @@ class _Choice:
         return {"kind": "choice", "choices": list(self.choices)}
 
 
+@dataclass(frozen=True, slots=True)
+class _Switch:
+    def clean(self, value: Any) -> bool:
+        if not isinstance(value, bool):
+            raise OverlaySettingError(self.describe())
+        return value
+
+    def describe(self) -> str:
+        return "true or false"
+
+    def to_json(self) -> dict[str, Any]:
+        return {"kind": "bool"}
+
+
 _COLOUR_RULE = _Text(_COLOR, "a colour like #RRGGBB", kind="color")
 
 # In the order the page shows them.
-RULES: dict[str, _Whole | _Text | _Choice] = {
+RULES: dict[str, _Whole | _Text | _Choice | _Switch] = {
     "anchor": _Choice(ANCHORS),
     "margin_x": _Whole(-5000, 5000),
     "margin_y": _Whole(-5000, 5000),
@@ -105,6 +119,7 @@ RULES: dict[str, _Whole | _Text | _Choice] = {
     "lines": _Whole(1, 2),
     "lead_ms": _Whole(-5000, 5000),
     "fade_ms": _Whole(0, 5000),
+    "underline_word": _Switch(),
 }
 
 
@@ -138,6 +153,7 @@ class OverlaySettings:
     lines: int
     lead_ms: int
     fade_ms: int
+    underline_word: bool
 
     @classmethod
     def from_settings(cls, settings: Settings) -> OverlaySettings:

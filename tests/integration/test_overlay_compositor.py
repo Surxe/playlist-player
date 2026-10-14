@@ -530,6 +530,26 @@ def test_lines_keep_appearing_after_settings_change_during_a_song(live):
     assert "Traceback" not in overlay.stderr and "WARNING" not in overlay.stderr
 
 
+def test_the_underline_moves_through_the_line_without_resizing_or_fading_it(live):
+    """The first line is up from 1.0 s to 2.5 s; its words end 250, 1000, 1250, 1500 ms in."""
+    overlay = live(OVERLAY_UNDERLINE_WORD="true", OVERLAY_LEAD_MS="0")
+    overlay.start()
+    base = overlay.play()
+    sleep_until(base + 3.2)
+    samples = overlay.finish()
+
+    line = [s for s in samples if s["mapped"] and s["text"] == "an invented first line"]
+    order = [s["underlined"] for s in line]
+    assert [w for i, w in enumerate(order) if i == 0 or w != order[i - 1]] == [
+        "an", "invented", "first", "line",
+    ]  # fmt: skip
+    for word, middle in (("an", 1.125), ("invented", 1.625), ("first", 2.125), ("line", 2.375)):
+        at = next(s for s in line if s["t"] >= base + middle)
+        assert at["underlined"] == word, (word, at)
+    assert len({(s["width"], s["height"]) for s in line[3:]}) == 1  # one size throughout
+    assert "Traceback" not in overlay.stderr
+
+
 def test_many_changes_shown_and_hidden_never_lose_the_window(live):
     """Every kind of setting, changed both while a line is up and while none is."""
     overlay = live()

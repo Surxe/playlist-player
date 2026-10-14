@@ -1,0 +1,42 @@
+{
+  "_comment": "Shared by the Python word tests and the node tests for static/clock.js. 'syllables': a word and its count. 'tracks': lines, and for each line when each word ends in ms after the line's timestamp (compared to within a millionth). 'moments': a line's ends, a time into the line, and the expected word index (-1 means no word).",
+  "syllables": [
+    {"word": "love", "expected": 1},
+    {"word": "time", "expected": 1},
+    {"word": "little", "expected": 2},
+    {"word": "free", "expected": 1},
+    {"word": "the", "expected": 1},
+    {"word": "beautiful", "expected": 3},
+    {"word": "rhythm", "expected": 1},
+    {"word": "café", "expected": 1},
+    {"word": "Qué", "expected": 1},
+    {"word": "'Cause", "expected": 1},
+    {"word": "hmm", "expected": 1},
+    {"word": "...", "expected": 1},
+    {"word": "you've", "expected": 1},
+    {"word": "pre-conceived", "expected": 4},
+    {"word": "", "expected": 1},
+    {"word": "über", "expected": 2},
+    {"word": "queue", "expected": 1}
+  ],
+  "tracks": [
+    {"name": "an even pace: every line is sung across its whole span", "lines": [{"t_ms": 0, "text": "one two three four"}, {"t_ms": 2000, "text": "five six seven eight"}, {"t_ms": 4000, "text": "nine ten more words"}, {"t_ms": 6000, "text": "and then the end"}, {"t_ms": 8000, "text": ""}], "expected": [[500.0, 1000.0, 1500.0, 2000.0], [400.0, 800.0, 1600.0, 2000.0], [500.0, 1000.0, 1500.0, 2000.0], [500.0, 1000.0, 1500.0, 2000.0], []]},
+    {"name": "a long span after one line is its trail, cut at the typical pace", "lines": [{"t_ms": 0, "text": "one two three four"}, {"t_ms": 2000, "text": "five six seven eight"}, {"t_ms": 4000, "text": "nine ten more words"}, {"t_ms": 20000, "text": "back in after it"}, {"t_ms": 22000, "text": "and on we go"}, {"t_ms": 24000, "text": ""}], "expected": [[500.0, 1000.0, 1500.0, 2000.0], [400.0, 800.0, 1600.0, 2000.0], [650.0, 1300.0, 1950.0, 2600.0], [400.0, 800.0, 1600.0, 2000.0], [500.0, 1000.0, 1500.0, 2000.0], []]},
+    {"name": "words share a line by their syllables", "lines": [{"t_ms": 0, "text": "a beautiful day"}, {"t_ms": 3000, "text": "wonderful, incredible morning"}, {"t_ms": 6000, "text": "so it is"}, {"t_ms": 9000, "text": ""}], "expected": [[600.0, 2400.0, 3000.0], [1000.0, 2333.3333333333335, 3000.0], [780.0, 1560.0, 2340.0], []]},
+    {"name": "the last line has no span and gets the estimate alone", "lines": [{"t_ms": 1000, "text": "first line here"}, {"t_ms": 2500, "text": "second line here"}, {"t_ms": 4000, "text": "third line here"}, {"t_ms": 5500, "text": "the very last line"}], "expected": [[500.0, 1000.0, 1500.0], [750.0, 1125.0, 1500.0], [500.0, 1000.0, 1500.0], [650.0, 1950.0, 2600.0, 3250.0]]},
+    {"name": "a pause line and lines sharing a timestamp get nothing", "lines": [{"t_ms": 0, "text": "one two three"}, {"t_ms": 1500, "text": ""}, {"t_ms": 3000, "text": "four five six"}, {"t_ms": 4500, "text": "same time"}, {"t_ms": 4500, "text": "same time too"}, {"t_ms": 6000, "text": "seven eight nine"}, {"t_ms": 7500, "text": ""}], "expected": [[500.0, 1000.0, 1500.0], [], [500.0, 1000.0, 1500.0], [], [500.0, 1000.0, 1500.0], [750.0, 1125.0, 1500.0], []]},
+    {"name": "a single line: nothing to judge its pace by", "lines": [{"t_ms": 5000, "text": "all alone"}], "expected": [[]]},
+    {"name": "too few lines nearby fall back on the whole track; accents and punctuation", "lines": [{"t_ms": 0, "text": "café olé"}, {"t_ms": 1200, "text": "¿Qué será, será?"}, {"t_ms": 20000, "text": "love time little free"}], "expected": [[400.0, 1200.0], [2704.0, 8112.0, 13520.0], [2704.0, 5408.0, 10816.0, 13520.0]]},
+    {"name": "no lines at all", "lines": [], "expected": []}
+  ],
+  "moments": [
+    {"name": "at the line's start", "ends": [500, 1000, 1500], "elapsed_ms": 0, "expected": 0},
+    {"name": "inside the first word", "ends": [500, 1000, 1500], "elapsed_ms": 499.9, "expected": 0},
+    {"name": "exactly where a word ends, the next has begun", "ends": [500, 1000, 1500], "elapsed_ms": 500, "expected": 1},
+    {"name": "inside the last word", "ends": [500, 1000, 1500], "elapsed_ms": 1499, "expected": 2},
+    {"name": "where the singing ends, the trail begins", "ends": [500, 1000, 1500], "elapsed_ms": 1500, "expected": -1},
+    {"name": "deep in the trail", "ends": [500, 1000, 1500], "elapsed_ms": 60000, "expected": -1},
+    {"name": "before the line", "ends": [500, 1000, 1500], "elapsed_ms": -1, "expected": -1},
+    {"name": "a line with no words", "ends": [], "elapsed_ms": 100, "expected": -1}
+  ]
+}

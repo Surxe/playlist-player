@@ -47,6 +47,21 @@ def test_cli_arguments_beat_the_environment(monkeypatch):
     assert settings.port == 9002 and settings.overlay_lines == 2
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("true", True), ("On", True), ("1", True), ("false", False), ("no", False), ("", False)],
+)
+def test_a_switch_is_read_from_text(monkeypatch, raw, expected):
+    monkeypatch.setenv("PLAYLIST_PLAYER_OVERLAY_UNDERLINE_WORD", raw)
+    assert load_settings().overlay_underline_word is expected
+
+
+def test_a_switch_that_is_neither_on_nor_off_is_refused(monkeypatch):
+    monkeypatch.setenv("PLAYLIST_PLAYER_OVERLAY_UNDERLINE_WORD", "maybe")
+    with pytest.raises(ConfigError, match="UNDERLINE_WORD must be true or false"):
+        load_settings()
+
+
 def test_dotenv_in_the_working_directory_is_loaded(tmp_path):
     Path(".env").write_text("PLAYLIST_PLAYER_SYNC_WORKERS=5\n")  # conftest chdir'd to tmp_path
     assert load_settings().sync_workers == 5
