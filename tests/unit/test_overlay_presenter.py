@@ -353,3 +353,20 @@ def test_the_model_underlines_only_when_configured_to():
     assert model.view(T0).underline is None
     model.configure(lead_ms=0, show_next=False, underline_word=True)
     assert underlined(model.view(T0)) == "one"
+
+
+def test_a_line_aligned_to_the_audio_uses_its_own_word_times():
+    """Heard times replace the estimate, and neither the lead nor the offset moves them."""
+    first = WORD_LINES[0]
+    heard = (first.__class__(first.t_ms, first.text, ((10_300, 11_800), (11_800, 12_400))),)
+    lines = heard + WORD_LINES[1:]
+
+    def shown(position_s: float, **state) -> str | None:
+        made = view(playing(position_s, **state), lines=lines, ends=word_ends(lines), lead_ms=150)
+        return underlined(made)
+
+    assert shown(10.1) is None  # the line is up, the singing has not begun
+    assert shown(10.3) == "one" and shown(11.7) == "one"  # the estimate says "two" by now
+    assert shown(11.8) == "two"
+    assert shown(10.3, offset_ms=-200) == "one"  # still on the audio's clock
+    assert shown(12.1) == "three"  # the next line was not aligned: the estimate again

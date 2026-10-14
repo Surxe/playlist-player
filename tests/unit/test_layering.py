@@ -19,7 +19,7 @@ LAYERS: dict[str, int] = {
     "models": 0, "errors": 0, "options_schema": 0,
     "http": 1, "config": 1, "cache": 1, "lyrics": 1,
     "sources": 2, "playback": 2, "overlay_settings": 2,
-    "sync": 3, "server": 3, "overlay": 3,
+    "sync": 3, "server": 3, "overlay": 3, "align": 3,
     "launch": 4,
     "cli": 5, "__main__": 6,
 }  # fmt: skip

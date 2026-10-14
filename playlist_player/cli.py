@@ -159,6 +159,36 @@ def _cmd_status(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _cmd_align(args: argparse.Namespace, settings: Settings) -> int:
+    from .align import align_tracks, summary
+    from .align.engine import NAME, TorchEngine
+    from .cache import CacheStore, assets
+    from .sources.tracklist import playlist_id_from
+
+    store = CacheStore(settings.cache_dir, settings.state_dir)
+    if args.track:
+        track_ids = [args.track]
+    else:
+        playlist_ids = [playlist_id_from(args.playlist)] if args.playlist else store.playlist_ids()
+        track_ids = []
+        for playlist_id in playlist_ids:
+            if not store.has(store.playlist_json(playlist_id)):
+                raise PlaylistPlayerError(f"playlist {playlist_id} is not cached; sync it first")
+            track_ids += assets.read_playlist(store, playlist_id).track_ids
+    if args.limit is not None:
+        track_ids = list(dict.fromkeys(track_ids))[: args.limit]
+
+    def said(report) -> None:
+        if report.outcome == "aligned":
+            print(f"  {report.track_id}  {report.placed}/{report.lines} lines placed", flush=True)
+        elif report.outcome == "failed":
+            print(f"  {report.track_id}  FAILED: {report.detail}", file=sys.stderr, flush=True)
+
+    reports = align_tracks(store, track_ids, TorchEngine, NAME, force=args.force, on_report=said)
+    print(summary(reports))
+    return 1 if any(report.outcome == "failed" for report in reports) else 0
+
+
 def _cmd_pin(args: argparse.Namespace, settings: Settings) -> int:
     from .cache import CacheStore, MissLog
     from .sync.pin import pin_audio
@@ -237,6 +267,16 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument(
         "--dry-run", action="store_true", help="report what would be done; write nothing"
     )
+
+    align = add(
+        "align",
+        "Time each word of the synced lyrics against the audio (needs requirements-align.txt).",
+        _cmd_align,
+    )
+    align.add_argument("playlist", nargs="?", help="playlist to align (default: every cached one)")
+    align.add_argument("--track", metavar="ID", help="align a single track")
+    align.add_argument("--limit", type=int, metavar="N", help="look at only the first N tracks")
+    align.add_argument("--force", action="store_true", help="align again what is already aligned")
 
     status = add("status", "Show what is cached for a playlist.", _cmd_status)
     status.add_argument(

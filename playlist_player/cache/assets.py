@@ -9,11 +9,13 @@ sync simply fetches it again. There is no database to fall out of step.
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass
+import hashlib
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..errors import CacheError
-from ..models import AudioAsset, LyricsInfo, LyricsKind, Playlist, Track, TrackState
+from ..models import AudioAsset, LyricLine, LyricsInfo, LyricsKind, Playlist, Track, TrackState
 from .store import CacheStore
 
 # ------------------------------- tracklist -------------------------------- #
@@ -50,6 +52,7 @@ def audio_path(store: CacheStore, track_id: str, asset: AudioAsset) -> Path:
 def write_audio(store: CacheStore, track_id: str, asset: AudioAsset) -> None:
     """Record provenance for an audio file already in place under its final name."""
     store.write_json(store.audio_json(track_id), asset.to_dict())
+    store.remove(store.words_json(track_id))  # word times belong to the audio they were heard in
 
 
 def clear_audio(store: CacheStore, track_id: str) -> None:
@@ -59,6 +62,7 @@ def clear_audio(store: CacheStore, track_id: str) -> None:
         with contextlib.suppress(CacheError):
             store.remove(store.track_file(track_id, data["file"]))
     store.remove(store.audio_json(track_id))
+    store.remove(store.words_json(track_id))
 
 
 # ---------------------------------- lyrics --------------------------------- #
@@ -109,6 +113,39 @@ def clear_lyrics(store: CacheStore, track_id: str) -> None:
         store.lyrics_json(track_id),
     ):
         store.remove(path)
+
+
+# ---------------------------------- words ---------------------------------- #
+
+
+def lyrics_digest(text: str) -> str:
+    """What a ``words.json`` records of the lyric text it was made from."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def with_words(
+    store: CacheStore, track_id: str, text: str, lines: Sequence[LyricLine]
+) -> tuple[LyricLine, ...]:
+    """``lines`` (parsed from ``text``) with the word times ``align`` stored for them.
+
+    The stored times are used only if they were made from this very text; anything else
+    (no file, an older text, a damaged file) leaves the lines as they are.
+    """
+    data = store.read_json(store.words_json(track_id), default=None)
+    if not isinstance(data, dict) or data.get("lyrics_sha256") != lyrics_digest(text):
+        return tuple(lines)
+    stored = data.get("lines")
+    if not isinstance(stored, list) or len(stored) != len(lines):
+        return tuple(lines)
+    merged = []
+    for line, words in zip(lines, stored, strict=True):
+        try:
+            times = None if words is None else tuple((int(a), int(b)) for a, b in words)
+        except (TypeError, ValueError):
+            times = None
+        usable = times is not None and len(times) == len(line.text.split())
+        merged.append(replace(line, words=times) if usable else line)
+    return tuple(merged)
 
 
 # ---------------------------------- state ---------------------------------- #

@@ -27,7 +27,14 @@ import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ..lyrics import current_index, current_word, line_times, word_ends, word_ranges
+from ..lyrics import (
+    aligned_word,
+    current_index,
+    current_word,
+    line_times,
+    word_ends,
+    word_ranges,
+)
 from ..models import LyricLine, LyricsKind, PlaybackState, PlayerStatus
 from .clock import position_ms
 
@@ -82,7 +89,8 @@ def present(
     """The view for this instant. ``times`` are the timestamps of ``lines``.
 
     ``ends`` are the lines' word endings (:func:`~playlist_player.lyrics.word_ends`);
-    given, the word being sung is underlined, and left out, no word is.
+    given, the word being sung is underlined, and left out, no word is. A line that
+    carries aligned word times uses those; any other line uses the estimate in ``ends``.
     """
     if not connected:
         return HIDDEN
@@ -106,9 +114,14 @@ def present(
     following = lines[index + 1].text if show_next and index + 1 < len(lines) else ""
     underline = None
     if ends is not None:
-        # The same shifted clock that chose the line, counted from the line's timestamp.
-        elapsed = position + lead_ms + state.offset_ms - times[index]
-        word = current_word(ends[index], elapsed)
+        aligned = lines[index].words
+        if aligned is not None:
+            # Heard in the audio itself: its own time, which no offset shifts.
+            word = aligned_word(aligned, position)
+        else:
+            # The same shifted clock that chose the line, counted from its timestamp.
+            elapsed = position + lead_ms + state.offset_ms - times[index]
+            word = current_word(ends[index], elapsed)
         if word >= 0:
             underline = word_ranges(text)[word]
     return OverlayView(True, text, following, ticking=True, underline=underline)
