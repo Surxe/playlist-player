@@ -20,7 +20,8 @@ LAYERS: dict[str, int] = {
     "http": 1, "config": 1, "cache": 1, "lyrics": 1,
     "sources": 2, "playback": 2, "overlay_settings": 2,
     "sync": 3, "server": 3, "overlay": 3,
-    "cli": 4, "__main__": 5,
+    "launch": 4,
+    "cli": 5, "__main__": 6,
 }  # fmt: skip
 
 OVERLAY_FORBIDDEN = {"cache", "sources", "playback", "sync", "server"}

@@ -11,7 +11,7 @@ from playlist_player import cli
 from playlist_player.config import REPO_ROOT
 from playlist_player.errors import ConfigError
 
-COMMANDS = ["sync", "status", "pin", "serve", "ctl", "overlay"]
+COMMANDS = ["sync", "status", "pin", "serve", "ctl", "overlay", "start"]
 
 
 def test_help_lists_every_command(capsys):
@@ -32,6 +32,7 @@ def test_help_lists_every_command(capsys):
         ["serve", "--port", "9100"],
         ["ctl", "seek", "+10"],
         ["overlay", "--demo"],
+        ["start", "--no-overlay", "--no-browser", "--port", "9100"],
     ],
 )
 def test_each_command_parses_and_reaches_a_handler(argv):

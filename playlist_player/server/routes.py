@@ -38,6 +38,7 @@ _STATIC_DIR = Path(__file__).parent / "static"
 _STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/static/icon.svg": ("icon.svg", "image/svg+xml"),
     "/static/clock.js": ("clock.js", "text/javascript; charset=utf-8"),
     "/static/overlay.js": ("overlay.js", "text/javascript; charset=utf-8"),
     "/static/settings.js": ("settings.js", "text/javascript; charset=utf-8"),

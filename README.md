@@ -20,6 +20,7 @@ layer-shell protocol (KDE Plasma, Sway and other wlroots compositors; not GNOME)
 | `serve` | The daemon: owns mpv, publishes playback state, serves the remote-control page | mpv |
 | `ctl` | Sends play, pause, next and so on to the daemon, for a keyboard shortcut | a running `serve` |
 | `overlay` | Draws the current lyric line above other windows; hidden while paused | a running `serve`, GTK 4 layer-shell |
+| `start` | The whole application at once: `serve`, `overlay` beside it, and the page opened in the browser | what those need |
 
 `sync` is the only command that touches the network. `serve`, the page and the overlay
 work from the cache: the page and the overlay are plain clients of the daemon's HTTP API
@@ -104,11 +105,22 @@ is acceptable under the terms of the services involved is for you to judge.
 ## Playing
 
 ```bash
-.venv/bin/python -m playlist_player serve          # the daemon; then open http://127.0.0.1:8765/
+.venv/bin/python -m playlist_player start          # everything at once; see below
+.venv/bin/python -m playlist_player serve          # the daemon alone; then open http://127.0.0.1:8765/
 .venv/bin/python -m playlist_player ctl toggle     # also: play, pause, next, prev, stop
 .venv/bin/python -m playlist_player ctl seek +10   # relative with a sign, absolute without
 .venv/bin/python -m playlist_player ctl volume 70
 ```
+
+`start` is the one command for everyday use. It runs the daemon, starts the overlay
+beside it and opens the page in your browser, all from one terminal, and that terminal
+is the application: Ctrl-C in it, or closing it, stops the daemon, mpv and the overlay
+together, after the daemon has saved where it was. Run it a second time while it is
+already running and it only opens the page. If the overlay cannot run here (no
+layer-shell, no display) that is said once and the rest carries on. `--no-overlay` and
+`--no-browser` leave either part out. To put it behind a desktop launcher, have the
+launcher open a terminal running `start`; `playlist_player/server/static/icon.svg` is
+the icon the page uses and serves as the launcher's too.
 
 `serve` starts mpv and owns it. The page is a remote control, not a player: sound comes
 from mpv. Pick a playlist, click a track, and the lyric pane follows the song; the
