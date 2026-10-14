@@ -23,6 +23,10 @@ mirrored for the page in ``server/static/clock.js`` and tested against the same 
 
 What this cannot see: phrasing inside a line (every syllable gets the same time), and a
 note held at the end of a line, which looks the same as a trail.
+
+A line that has been aligned to the audio (``LyricLine.words``, from the ``align``
+command) needs no estimate: :func:`aligned_word` looks the moment up in the times that
+were heard. Those are in the audio's own time, so the track's offset does not move them.
 """
 
 from __future__ import annotations
@@ -41,6 +45,10 @@ SLACK = 1.3
 WINDOW = 4
 # Fewer paces than this near a line and the whole track's are used instead.
 _MIN_NEARBY = 3
+
+# An aligned word is underlined this long before it is sung: a word that changes exactly
+# on its first sound reads as late.
+ALIGNED_LEAD_MS = 50
 
 _WORD = re.compile(r"\S+")
 _NOT_A_LETTER = re.compile(r"[^a-z]")
@@ -109,3 +117,16 @@ def current_word(ends: Sequence[float], elapsed_ms: float) -> int:
     if not ends or elapsed_ms < 0 or elapsed_ms >= ends[-1]:
         return -1
     return bisect_right(ends, elapsed_ms)
+
+
+def aligned_word(words: Sequence[tuple[int, int]], position_ms: float) -> int:
+    """Index of the word being sung at ``position_ms`` of the audio, or -1 for none.
+
+    ``words`` are one line's ``(start_ms, end_ms)`` from the alignment, in order. A word
+    is current from its start until the next one starts; there is none before the first
+    starts or after the last ends.
+    """
+    moment = position_ms + ALIGNED_LEAD_MS
+    if not words or moment < words[0][0] or moment >= words[-1][1]:
+        return -1
+    return bisect_right(words, moment, key=lambda word: word[0]) - 1

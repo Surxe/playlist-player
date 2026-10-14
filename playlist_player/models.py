@@ -116,13 +116,31 @@ class Playlist:
 
 @dataclass(frozen=True, slots=True)
 class LyricLine:
-    """One timed line. Empty ``text`` is a deliberate gap: show nothing from ``t_ms``."""
+    """One timed line. Empty ``text`` is a deliberate gap: show nothing from ``t_ms``.
+
+    ``words``, when the track has been aligned and this line was found, is when each of
+    its words is sung: ``(start_ms, end_ms)`` in the audio file's own time, which the
+    track's offset does not shift. ``t_ms`` is the lyric file's time, which it does.
+    """
 
     t_ms: int
     text: str
+    words: tuple[tuple[int, int], ...] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"t_ms": self.t_ms, "text": self.text}
+        data: dict[str, Any] = {"t_ms": self.t_ms, "text": self.text}
+        if self.words is not None:
+            data["words"] = [list(word) for word in self.words]
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LyricLine:
+        words = data.get("words")
+        return cls(
+            int(data["t_ms"]),
+            str(data["text"]),
+            None if words is None else tuple((int(a), int(b)) for a, b in words),
+        )
 
 
 @dataclass(frozen=True, slots=True)

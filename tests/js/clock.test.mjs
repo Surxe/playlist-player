@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  alignedWord,
   currentIndex,
   currentWord,
   formatTime,
@@ -134,6 +135,16 @@ for (const c of words.moments) {
     assert.equal(currentWord(c.ends, c.elapsed_ms), c.expected);
   });
 }
+
+for (const c of words.aligned) {
+  test(`alignedWord: ${c.name}`, () => {
+    assert.equal(alignedWord(c.words, c.position_ms), c.expected);
+  });
+}
+
+test("alignedWord takes a line with no word times", () => {
+  assert.equal(alignedWord(null, 1000), -1);
+});
 
 test("wordRanges gives offsets into the text", () => {
   const text = "Se\u00f1or, don't  stop";

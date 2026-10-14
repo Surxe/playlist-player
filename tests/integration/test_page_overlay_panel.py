@@ -18,9 +18,10 @@ from pathlib import Path
 
 import pytest
 
+from playlist_player.cache import assets
 from playlist_player.config import REPO_ROOT, load_settings
 from playlist_player.server.app import Daemon
-from tests.support.library import PLAYLIST_ID, build_library
+from tests.support.library import PLAYLIST_ID, SYNCED, build_library
 from tests.support.playback import FakePlayer
 
 DRIVER = REPO_ROOT / "tests" / "js" / "drive_page.mjs"
@@ -499,3 +500,27 @@ def test_the_word_being_sung_is_underlined_once_the_setting_is_on(daemon, tmp_pa
     # A later offset brings the words sooner, as it does the line.
     daemon.routes.dispatch("POST", "/api/v1/tracks/TRK0000/offset", b'{"offset_ms": 300}')
     assert sung_at(daemon, tmp_path, 1.75) == ["first", "underline"]
+
+
+def test_a_line_aligned_to_the_audio_is_underlined_by_its_own_word_times(daemon, tmp_path, store):
+    """With word times from ``align``, the page follows them and not the estimate."""
+    store.write_json(
+        store.words_json("TRK0000"),
+        {
+            "lyrics_sha256": assets.lyrics_digest(SYNCED),
+            # The singing starts late and the last word is held: nothing like 250 ms each.
+            "lines": [[[1500, 1600], [1600, 1700], [1700, 1800], [1800, 2400]], None, None],
+        },
+    )
+    daemon.overlay.update({"underline_word": True})
+    queue = daemon.routes._library.queue_for(PLAYLIST_ID)
+    daemon.player.load_queue(queue, paused=True)
+
+    assert sung_at(daemon, tmp_path, 1.2) is None  # the line is up; nobody is singing yet
+    assert sung_at(daemon, tmp_path, 1.5) == ["an", "underline"]
+    assert sung_at(daemon, tmp_path, 2.0) == ["line", "underline"]  # the estimate says "first"
+    # The offset moves the line, not the words: they were heard in this audio.
+    daemon.routes.dispatch("POST", "/api/v1/tracks/TRK0000/offset", b'{"offset_ms": 300}')
+    assert sung_at(daemon, tmp_path, 2.0) == ["line", "underline"]
+    # The last line was not aligned, so it is estimated as before.
+    assert sung_at(daemon, tmp_path, 4.2) == ["invented", "underline"]

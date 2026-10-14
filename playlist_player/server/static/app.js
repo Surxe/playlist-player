@@ -3,7 +3,7 @@
 // position is extrapolated locally (see clock.js), so nothing here polls.
 
 import {
-  currentIndex, currentWord, formatTime, lineProgress, positionAt, wordEnds, wordRanges,
+  alignedWord, currentIndex, currentWord, formatTime, lineProgress, positionAt, wordEnds, wordRanges,
 } from "./clock.js";
 import { initOverlayPanel } from "./overlay.js";
 import { initPlaybackSettings, initSettingsPane, initTrackSettings } from "./settings.js";
@@ -27,7 +27,7 @@ const els = {
 let state = null; // the latest PlaybackState snapshot
 let playlist = null; // the playlist shown in the track list
 let tracksById = new Map();
-let lyrics = { trackId: null, kind: "missing", times: [], ends: [], rows: [] };
+let lyrics = { trackId: null, kind: "missing", times: [], ends: [], words: [], rows: [] };
 let shownLine = -2;
 let shownWord = null; // the underlined word's element, when there is one
 let underlineWord = false; // the overlay's "underline word" setting, which the page follows
@@ -186,7 +186,7 @@ function markCurrentTrack() {
 // --------------------------------- lyrics -------------------------------- //
 
 async function loadLyrics(trackId) {
-  lyrics = { trackId, kind: "missing", times: [], ends: [], rows: [] };
+  lyrics = { trackId, kind: "missing", times: [], ends: [], words: [], rows: [] };
   shownLine = -2;
   shownWord = null;
   els.lyrics.replaceChildren();
@@ -199,6 +199,7 @@ async function loadLyrics(trackId) {
   if (data.kind === "synced") {
     lyrics.times = data.lines.map((line) => line.t_ms);
     lyrics.ends = wordEnds(data.lines);
+    lyrics.words = data.lines.map((line) => line.words ?? null);
     // A line with no words marks a pause in the singing; it gets no progress bar.
     lyrics.rows = data.lines.map((line) => lyricRow(line.text));
     els.lyrics.replaceChildren(...lyrics.rows);
@@ -253,12 +254,16 @@ function showProgress(index, positionS) {
   row.style.setProperty("--progress", value || "0");
 }
 
-// The underline under the word being sung: an estimate from the line's timing (see
-// clock.js), on the same shifted clock as the line and its bar. Off unless the overlay
-// setting turns it on; no word is underlined while a line trails off.
+// The underline under the word being sung. A line that was aligned to the audio carries
+// the time of each word, in the audio's own time. Any other line gets an estimate from
+// the line's timing (see clock.js), on the same shifted clock as the line and its bar.
+// Off unless the overlay setting turns it on; no word is underlined while a line trails
+// off.
 function showWord(index, positionS) {
   let word = -1;
-  if (underlineWord && index >= 0) {
+  if (underlineWord && index >= 0 && lyrics.words[index]) {
+    word = alignedWord(lyrics.words[index], positionS * 1000);
+  } else if (underlineWord && index >= 0) {
     const elapsed = positionS * 1000 + LEAD_MS + state.offset_ms - lyrics.times[index];
     word = currentWord(lyrics.ends[index], elapsed);
   }

@@ -7,9 +7,10 @@ commands and the tests all use them directly.
 
 from .lrc import parse_lrc
 from .timeline import current_index, line_times
-from .words import current_word, word_ends, word_ranges
+from .words import aligned_word, current_word, word_ends, word_ranges
 
 __all__ = [
+    "aligned_word",
     "current_index",
     "current_word",
     "line_times",

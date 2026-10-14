@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player.lyrics import current_word, parse_lrc, word_ends, word_ranges
+from playlist_player.lyrics import aligned_word, current_word, parse_lrc, word_ends, word_ranges
 from playlist_player.lyrics.words import SLACK, syllables
 from playlist_player.models import LyricLine
 
@@ -30,6 +30,12 @@ def test_shared_track_table(case):
 @pytest.mark.parametrize("case", TABLE["moments"], ids=lambda case: case["name"])
 def test_shared_moment_table(case):
     assert current_word(case["ends"], case["elapsed_ms"]) == case["expected"]
+
+
+@pytest.mark.parametrize("case", TABLE["aligned"], ids=lambda case: case["name"])
+def test_shared_aligned_table(case):
+    words = [tuple(word) for word in case["words"]]
+    assert aligned_word(words, case["position_ms"]) == case["expected"]
 
 
 def test_a_line_at_the_usual_pace_is_sung_until_the_next_line():

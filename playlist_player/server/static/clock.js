@@ -114,6 +114,22 @@ export function currentWord(ends, elapsedMs) {
   return currentIndex(ends, elapsedMs) + 1;
 }
 
+// An aligned word is underlined this long before it is sung (lyrics/words.py).
+export const ALIGNED_LEAD_MS = 50;
+
+// Index of the word being sung at `positionMs` of the audio, or -1 for none. `words` are
+// one line's [start_ms, end_ms] pairs from the daemon, present when the track has been
+// aligned to its audio. They are in the audio's own time: no lead, no offset.
+export function alignedWord(words, positionMs) {
+  const moment = positionMs + ALIGNED_LEAD_MS;
+  if (!words || !words.length || moment < words[0][0] || moment >= words[words.length - 1][1]) {
+    return -1;
+  }
+  let index = 0;
+  while (index + 1 < words.length && words[index + 1][0] <= moment) index += 1;
+  return index;
+}
+
 export function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const whole = Math.floor(seconds);

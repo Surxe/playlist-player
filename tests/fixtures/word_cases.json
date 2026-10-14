@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared by the Python word tests and the node tests for static/clock.js. 'syllables': a word and its count. 'tracks': lines, and for each line when each word ends in ms after the line's timestamp (compared to within a millionth). 'moments': a line's ends, a time into the line, and the expected word index (-1 means no word).",
+  "_comment": "Shared by the Python word tests and the node tests for static/clock.js. 'syllables': a word and its count. 'tracks': lines, and for each line when each word ends in ms after the line's timestamp (compared to within a millionth). 'moments': a line's ends, a time into the line, and the expected word index (-1 means no word). 'aligned': a line's word times as heard in the audio, a position in the audio, and the expected word index.",
   "syllables": [
     {"word": "love", "expected": 1},
     {"word": "time", "expected": 1},
@@ -38,5 +38,15 @@
     {"name": "deep in the trail", "ends": [500, 1000, 1500], "elapsed_ms": 60000, "expected": -1},
     {"name": "before the line", "ends": [500, 1000, 1500], "elapsed_ms": -1, "expected": -1},
     {"name": "a line with no words", "ends": [], "elapsed_ms": 100, "expected": -1}
+  ],
+  "aligned": [
+    {"name": "before the first word, beyond the lead", "words": [[1000, 1400], [1400, 2500], [3000, 3600]], "position_ms": 949, "expected": -1},
+    {"name": "the lead shows a word 50 ms early", "words": [[1000, 1400], [1400, 2500], [3000, 3600]], "position_ms": 950, "expected": 0},
+    {"name": "inside the first word", "words": [[1000, 1400], [1400, 2500], [3000, 3600]], "position_ms": 1200, "expected": 0},
+    {"name": "a long word stays current for all of it", "words": [[1000, 1400], [1400, 2500], [3000, 3600]], "position_ms": 2400, "expected": 1},
+    {"name": "between two words the earlier one stays", "words": [[1000, 1400], [1400, 2500], [3000, 3600]], "position_ms": 2700, "expected": 1},
+    {"name": "the last word", "words": [[1000, 1400], [1400, 2500], [3000, 3600]], "position_ms": 3500, "expected": 2},
+    {"name": "after the last word ends there is none", "words": [[1000, 1400], [1400, 2500], [3000, 3600]], "position_ms": 3550, "expected": -1},
+    {"name": "a line that was not aligned", "words": [], "position_ms": 1200, "expected": -1}
   ]
 }
