@@ -14,6 +14,7 @@ Layout::
         audio.json            where the audio came from and how it scored
         lyrics.lrc | lyrics.txt
         lyrics.json           which record was chosen and how confident the timing is
+        words.json            when each word is sung, from `align`; absent until it is run
         cover.jpg
       misses.json             negative cache, see misses.py
     <state_dir>/
@@ -144,6 +145,9 @@ class CacheStore:
 
     def lyrics_txt(self, track_id: str) -> Path:
         return self.track_dir(track_id) / "lyrics.txt"
+
+    def words_json(self, track_id: str) -> Path:
+        return self.track_dir(track_id) / "words.json"
 
     def track_cover(self, track_id: str) -> Path:
         return self.track_dir(track_id) / "cover.jpg"

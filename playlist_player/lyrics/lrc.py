@@ -16,7 +16,8 @@ Rules applied here:
 * A positive ``offset`` makes lyrics appear sooner, so it is subtracted from every
   timestamp. That is the format's own convention, and the opposite sign from this
   tool's per-track ``offset_ms`` (which is added to the playback position).
-* Inline word timestamps (``<00:12.80>``) are dropped; word-level display is not built.
+* Inline word timestamps (``<00:12.80>``) are dropped; the current word is estimated
+  instead (see ``words.py``).
 * A line with no leading timestamp carries no time and is skipped.
 * Output is sorted by time; lines sharing a timestamp keep their order in the text.
 """

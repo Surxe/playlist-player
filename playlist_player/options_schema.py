@@ -290,4 +290,15 @@ OPTIONS_SCHEMA = {
         "section": _OVERLAY,
         "help": "Fade duration when a line appears or disappears.",
     },
+    "OVERLAY_UNDERLINE_WORD": {
+        "env": "PLAYLIST_PLAYER_OVERLAY_UNDERLINE_WORD",
+        "arg": "--overlay-underline-word",
+        "type": bool,
+        "default": False,
+        "section": _OVERLAY,
+        "help": (
+            "Underline the word being sung, in the overlay and on the page. The word is "
+            "estimated from the line timing, so it needs the track's offset to be right."
+        ),
+    },
 }

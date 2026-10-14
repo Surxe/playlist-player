@@ -129,6 +129,8 @@ ol { list-style: none; margin: 0; padding: 0; }
   width: calc(var(--progress, 0) * min(100%, 26em));
   background: var(--accent);
 }
+/* The word being sung, when the overlay's "underline word" setting is on. */
+#lyrics li.current span.sung { text-decoration: underline; text-underline-offset: 5px; }
 #lyrics.plain { padding: 16px 24px; }
 #lyrics.plain li { font-size: 15px; padding: 2px 0; }
 

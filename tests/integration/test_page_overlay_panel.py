@@ -18,9 +18,10 @@ from pathlib import Path
 
 import pytest
 
+from playlist_player.cache import assets
 from playlist_player.config import REPO_ROOT, load_settings
 from playlist_player.server.app import Daemon
-from tests.support.library import PLAYLIST_ID, build_library
+from tests.support.library import PLAYLIST_ID, SYNCED, build_library
 from tests.support.playback import FakePlayer
 
 DRIVER = REPO_ROOT / "tests" / "js" / "drive_page.mjs"
@@ -100,7 +101,7 @@ OPEN = [
     {"wait": "document.getElementById('playlists').options.length"},
     {"eval": HELPERS},
     {"eval": "t.el('settings-open').click()"},
-    {"wait": "document.querySelectorAll('#overlay-form .row').length === 12"},
+    {"wait": "document.querySelectorAll('#overlay-form .row').length === 13"},
 ]
 
 
@@ -455,3 +456,71 @@ def test_the_track_switches_take_tracks_out_of_the_list_and_put_them_back(daemon
     assert settings["include_without_lyrics"] is True
     assert settings["include_without_audio"] is False
     assert shot.stat().st_size > 0
+
+
+# The word the page underlines in the current lyric line, and how it is drawn.
+SUNG = """(() => {
+  const words = document.querySelectorAll('#lyrics li.current span.sung');
+  if (words.length !== 1) return words.length ? 'several' : null;
+  return [words[0].textContent, getComputedStyle(words[0]).textDecorationLine];
+})()"""
+
+
+def sung_at(daemon, tmp_path, position_s: float, before: list[dict] = ()) -> list | None:
+    """The underlined word with the synthetic track paused at ``position_s``."""
+    daemon.player.position = position_s
+    daemon.player._publish()
+    results = drive(daemon, tmp_path, [
+        *before,
+        {"wait": "document.querySelector('#lyrics li.current')"},
+        {"eval": "new Promise((done) => setTimeout(done, 200))"},
+        {"eval": SUNG},
+    ])  # fmt: skip
+    return results[-1]
+
+
+def test_the_word_being_sung_is_underlined_once_the_setting_is_on(daemon, tmp_path):
+    """The first line starts at 1.0 s and the pause after it at 2.5 s.
+
+    Its six syllables share that 1.5 s, 250 ms each: "an" to 250, "invented" to 1000,
+    "first" to 1250, "line" to 1500, on the page's clock (150 ms ahead of the song).
+    """
+    queue = daemon.routes._library.queue_for(PLAYLIST_ID)
+    daemon.player.load_queue(queue, paused=True)
+
+    assert sung_at(daemon, tmp_path, 1.75) is None  # off until asked for
+
+    switched = [*OPEN, {"eval": "t.field('underline_word').click()"}]
+    assert sung_at(daemon, tmp_path, 1.75, switched) == ["invented", "underline"]
+    assert daemon.overlay.snapshot()["overrides"] == {"underline_word": True}
+
+    assert sung_at(daemon, tmp_path, 0.9) == ["an", "underline"]
+    assert sung_at(daemon, tmp_path, 2.3) == ["line", "underline"]
+    assert sung_at(daemon, tmp_path, 3.0) is None  # the pause: a line with no words
+    # A later offset brings the words sooner, as it does the line.
+    daemon.routes.dispatch("POST", "/api/v1/tracks/TRK0000/offset", b'{"offset_ms": 300}')
+    assert sung_at(daemon, tmp_path, 1.75) == ["first", "underline"]
+
+
+def test_a_line_aligned_to_the_audio_is_underlined_by_its_own_word_times(daemon, tmp_path, store):
+    """With word times from ``align``, the page follows them and not the estimate."""
+    store.write_json(
+        store.words_json("TRK0000"),
+        {
+            "lyrics_sha256": assets.lyrics_digest(SYNCED),
+            # The singing starts late and the last word is held: nothing like 250 ms each.
+            "lines": [[[1500, 1600], [1600, 1700], [1700, 1800], [1800, 2400]], None, None],
+        },
+    )
+    daemon.overlay.update({"underline_word": True})
+    queue = daemon.routes._library.queue_for(PLAYLIST_ID)
+    daemon.player.load_queue(queue, paused=True)
+
+    assert sung_at(daemon, tmp_path, 1.2) is None  # the line is up; nobody is singing yet
+    assert sung_at(daemon, tmp_path, 1.5) == ["an", "underline"]
+    assert sung_at(daemon, tmp_path, 2.0) == ["line", "underline"]  # the estimate says "first"
+    # The offset moves the line, not the words: they were heard in this audio.
+    daemon.routes.dispatch("POST", "/api/v1/tracks/TRK0000/offset", b'{"offset_ms": 300}')
+    assert sung_at(daemon, tmp_path, 2.0) == ["line", "underline"]
+    # The last line was not aligned, so it is estimated as before.
+    assert sung_at(daemon, tmp_path, 4.2) == ["invented", "underline"]

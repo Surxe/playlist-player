@@ -149,7 +149,7 @@ class DaemonClient:
             if response.status != 200:
                 return ()
             lines = json.loads(body).get("lines") or []
-            return tuple(LyricLine(int(line["t_ms"]), str(line["text"])) for line in lines)
+            return tuple(LyricLine.from_dict(line) for line in lines)
         except (OSError, http.client.HTTPException, ValueError, KeyError, TypeError):
             return ()
         finally:

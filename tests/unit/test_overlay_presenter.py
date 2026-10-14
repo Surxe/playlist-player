@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from playlist_player.errors import ConfigError
-from playlist_player.lyrics import line_times, parse_lrc
+from playlist_player.lyrics import line_times, parse_lrc, word_ends
 from playlist_player.models import LyricsKind, PlaybackState, PlayerStatus
 from playlist_player.overlay.clock import now_epoch_ms, position_ms
 from playlist_player.overlay.presenter import (
@@ -296,3 +296,77 @@ def test_style_refuses_nonsense_sizes():
         style(font_size=0)
     with pytest.raises(ConfigError):
         style(max_width=0)
+
+
+# ------------------------------ the current word ---------------------------- #
+
+# Three lines sung at a syllable a second, then a line left hanging for 26 s.
+WORD_LINES = parse_lrc(
+    "[00:10.00] one two\n[00:12.00] three four\n[00:14.00] five six\n"
+    "[00:16.00] seven eight\n[00:44.00]\n"
+)
+
+
+def word_view(position_s: float, **kwargs) -> OverlayView:
+    kwargs.setdefault("ends", word_ends(WORD_LINES))
+    return view(playing(position_s), lines=WORD_LINES, **kwargs)
+
+
+def underlined(shown: OverlayView) -> str | None:
+    return None if shown.underline is None else shown.text[slice(*shown.underline)]
+
+
+def test_no_word_is_underlined_unless_asked_for():
+    assert word_view(10.5, ends=None).underline is None
+
+
+def test_the_word_being_sung_is_underlined():
+    assert underlined(word_view(10.5)) == "one"
+    assert underlined(word_view(11.5)) == "two"
+    assert underlined(word_view(12.0)) == "three"
+
+
+def test_the_underline_follows_the_lead_and_the_offset_like_the_line_does():
+    assert underlined(word_view(10.9, lead_ms=150)) == "two"
+    shifted = view(playing(10.5, offset_ms=600), lines=WORD_LINES, ends=word_ends(WORD_LINES))
+    assert underlined(shifted) == "two"
+
+
+def test_no_word_is_underlined_while_a_line_trails_off():
+    assert underlined(word_view(19.0)) == "eight"
+    trailing = word_view(30.0)
+    assert trailing.text == "seven eight" and trailing.underline is None
+
+
+def test_the_sample_line_shows_the_underline_when_it_is_on():
+    assert sample_view().underline is None
+    assert underlined(sample_view(underline_word=True)) == "current"
+    previewed = view(None, preview_until_ms=T0 + 5000, ends=())
+    assert underlined(previewed) == "current"
+
+
+def test_the_model_underlines_only_when_configured_to():
+    model = OverlayModel()
+    model.set_connected(True)
+    model.set_state(playing(10.5))
+    model.set_lyrics("T1", WORD_LINES)
+    assert model.view(T0).underline is None
+    model.configure(lead_ms=0, show_next=False, underline_word=True)
+    assert underlined(model.view(T0)) == "one"
+
+
+def test_a_line_aligned_to_the_audio_uses_its_own_word_times():
+    """Heard times replace the estimate, and neither the lead nor the offset moves them."""
+    first = WORD_LINES[0]
+    heard = (first.__class__(first.t_ms, first.text, ((10_300, 11_800), (11_800, 12_400))),)
+    lines = heard + WORD_LINES[1:]
+
+    def shown(position_s: float, **state) -> str | None:
+        made = view(playing(position_s, **state), lines=lines, ends=word_ends(lines), lead_ms=150)
+        return underlined(made)
+
+    assert shown(10.1) is None  # the line is up, the singing has not begun
+    assert shown(10.3) == "one" and shown(11.7) == "one"  # the estimate says "two" by now
+    assert shown(11.8) == "two"
+    assert shown(10.3, offset_ms=-200) == "one"  # still on the audio's clock
+    assert shown(12.1) == "three"  # the next line was not aligned: the estimate again

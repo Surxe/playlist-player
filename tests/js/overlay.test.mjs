@@ -36,6 +36,13 @@ test("a colour is sent only in a plain form", () => {
   }
 });
 
+test("a switch is sent only as a real true or false", () => {
+  const rule = { kind: "bool" };
+  assert.equal(parseValue(rule, true), true);
+  assert.equal(parseValue(rule, false), false);
+  for (const raw of ["true", "on", 1, ""]) assert.equal(parseValue(rule, raw), undefined);
+});
+
 test("text is passed through for the daemon to judge", () => {
   assert.equal(parseValue({ kind: "text" }, "Serif Italic"), "Serif Italic");
   assert.equal(parseValue({ kind: "text" }, ""), "");
@@ -51,7 +58,7 @@ test("the colour picker is given a form it understands, or left alone", () => {
 test("every setting is listed once", () => {
   const keys = FIELDS.map((field) => field.key);
   assert.equal(new Set(keys).size, keys.length);
-  assert.equal(keys.length, 12);
+  assert.equal(keys.length, 13);
 });
 
 test("a margin slider cannot drag an attached overlay off the screen", () => {

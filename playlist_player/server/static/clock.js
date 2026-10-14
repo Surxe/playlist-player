@@ -1,8 +1,10 @@
-// Position extrapolation and current-line lookup for the remote page.
+// Position extrapolation, current-line lookup and the current-word estimate for the
+// remote page.
 //
-// No DOM access, so this file runs under `node --test`. Both functions mirror the
-// Python side (models.PlaybackState.position_at and lyrics.timeline.current_index) and
-// are tested against the same table of cases, tests/fixtures/timeline_cases.json.
+// No DOM access, so this file runs under `node --test`. The functions mirror the Python
+// side (models.PlaybackState.position_at, lyrics.timeline.current_index and
+// lyrics.words) and are tested against the same tables of cases,
+// tests/fixtures/timeline_cases.json and tests/fixtures/word_cases.json.
 
 // Where playback is at `nowMs`, given the last snapshot from the daemon. Snapshots are
 // only sent when something changes; in between, the position is the snapshot's position
@@ -43,6 +45,89 @@ export function lineProgress(times, index, positionMs, leadMs = 0, offsetMs = 0,
   else if (durationMs !== null && Number.isFinite(durationMs)) end = durationMs + shift;
   if (end === null || end <= start) return null;
   return Math.min(1, Math.max(0, (positionMs + shift - start) / (end - start)));
+}
+
+// ---- the current word: an estimate. lyrics/words.py explains the reasoning; this is
+// the same arithmetic in the same order, so both give the same numbers.
+
+export const SLACK = 1.3;
+export const WINDOW = 4;
+const MIN_NEARBY = 3;
+
+// A rough syllable count for `word`; at least 1, whatever it is made of.
+export function syllables(word) {
+  const letters = word.normalize("NFD").toLowerCase().replace(/[^a-z]/g, "");
+  let count = (letters.match(/[aeiouy]+/g) ?? []).length;
+  if (count > 1 && letters.endsWith("e") && !letters.endsWith("le") && !letters.endsWith("ee")) {
+    count -= 1; // a silent final e: "love", "time"
+  }
+  return Math.max(1, count);
+}
+
+// Where each word of `text` starts and ends, as [start, end] offsets.
+export function wordRanges(text) {
+  return [...text.matchAll(/\S+/g)].map((match) => [match.index, match.index + match[0].length]);
+}
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+const sum = (values) => values.reduce((total, value) => total + value, 0);
+
+// For each line ({t_ms, text}), when each of its words ends, in ms after the line's
+// timestamp. A line's last entry is where its singing is taken to end: its span to the
+// next line, cut short when that is longer than its syllables would take at the pace
+// of the lines around it. No entries for a line with no words or no usable length.
+export function wordEnds(lines) {
+  const weights = lines.map((line) => wordRanges(line.text).map(([a, b]) => syllables(line.text.slice(a, b))));
+  const spans = lines.map((line, i) => (i + 1 < lines.length ? lines[i + 1].t_ms - line.t_ms : null));
+  const paces = weights.map((line, i) =>
+    line.length && spans[i] !== null && spans[i] > 0 ? spans[i] / sum(line) : null);
+  const known = paces.filter((pace) => pace !== null);
+  const overall = known.length ? median(known) : null;
+
+  return weights.map((line, index) => {
+    const nearby = paces
+      .slice(Math.max(0, index - WINDOW), index + WINDOW + 1)
+      .filter((pace) => pace !== null);
+    const typical = nearby.length >= MIN_NEARBY ? median(nearby) : overall;
+    const span = spans[index];
+    const total = sum(line);
+    if (!line.length || typical === null || (span !== null && span <= 0)) return [];
+    let sung = total * typical * SLACK;
+    if (span !== null) sung = Math.min(span, sung);
+    let done = 0;
+    return line.map((weight) => {
+      done += weight;
+      return (sung * done) / total;
+    });
+  });
+}
+
+// Index of the word being sung `elapsedMs` into its line, or -1 for none: before the
+// line starts, or once its singing has ended. `ends` is one line's entry from wordEnds.
+export function currentWord(ends, elapsedMs) {
+  if (!ends || !ends.length || elapsedMs < 0 || elapsedMs >= ends[ends.length - 1]) return -1;
+  return currentIndex(ends, elapsedMs) + 1;
+}
+
+// An aligned word is underlined this long before it is sung (lyrics/words.py).
+export const ALIGNED_LEAD_MS = 50;
+
+// Index of the word being sung at `positionMs` of the audio, or -1 for none. `words` are
+// one line's [start_ms, end_ms] pairs from the daemon, present when the track has been
+// aligned to its audio. They are in the audio's own time: no lead, no offset.
+export function alignedWord(words, positionMs) {
+  const moment = positionMs + ALIGNED_LEAD_MS;
+  if (!words || !words.length || moment < words[0][0] || moment >= words[words.length - 1][1]) {
+    return -1;
+  }
+  let index = 0;
+  while (index + 1 < words.length && words[index + 1][0] <= moment) index += 1;
+  return index;
 }
 
 export function formatTime(seconds) {

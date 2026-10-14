@@ -58,7 +58,9 @@ def build_renderer(settings: Settings) -> Renderer:
 
 
 def demo_view(settings: Settings) -> OverlayView:
-    return sample_view(show_next=settings.overlay_lines == 2)
+    return sample_view(
+        show_next=settings.overlay_lines == 2, underline_word=settings.overlay_underline_word
+    )
 
 
 class LiveSettings:
@@ -81,7 +83,11 @@ class LiveSettings:
         values = self._base.merged(overrides)
         if values != self._current:
             self._current = values
-            self._model.configure(lead_ms=values.lead_ms, show_next=values.lines == 2)
+            self._model.configure(
+                lead_ms=values.lead_ms,
+                show_next=values.lines == 2,
+                underline_word=values.underline_word,
+            )
             self._renderer.reconfigure(*placement_and_style(values), values.monitor)
         until = document.get("preview_until_ms")
         self._model.set_preview_until(until if isinstance(until, int) else 0)
@@ -89,7 +95,11 @@ class LiveSettings:
 
 def connect(settings: Settings, renderer: Renderer) -> tuple[OverlayModel, DaemonClient]:
     """The model and the client that feeds it, set to wake ``renderer`` on every change."""
-    model = OverlayModel(lead_ms=settings.overlay_lead_ms, show_next=settings.overlay_lines == 2)
+    model = OverlayModel(
+        lead_ms=settings.overlay_lead_ms,
+        show_next=settings.overlay_lines == 2,
+        underline_word=settings.overlay_underline_word,
+    )
     live = LiveSettings(OverlaySettings.from_settings(settings), model, renderer)
     client = DaemonClient(settings.base_url, model, on_change=renderer.wake, on_overlay=live.apply)
     return model, client

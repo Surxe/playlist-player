@@ -71,6 +71,7 @@ class Settings:
     overlay_lines: int
     overlay_lead_ms: int
     overlay_fade_ms: int
+    overlay_underline_word: bool
 
     def __repr__(self) -> str:
         # A Settings object ends up in logs and tracebacks; never let the token ride along.
@@ -99,7 +100,7 @@ class Settings:
 
 def _choices(option: Mapping[str, Any]) -> tuple[str, ...]:
     """The allowed values of an option whose type is a ``Literal``; empty otherwise."""
-    return tuple(get_args(option["type"])) if option["type"] not in (str, int, float) else ()
+    return tuple(get_args(option["type"])) if option["type"] not in (str, int, float, bool) else ()
 
 
 def add_settings_arguments(parser: ArgumentParser) -> None:
@@ -159,6 +160,10 @@ def read_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+_TRUE = ("true", "yes", "on", "1")
+_FALSE = ("false", "no", "off", "0")
+
+
 def _convert(name: str, option: Mapping[str, Any], raw: Any) -> Any:
     """``raw`` (text from a flag, the environment or a file) as the option's type."""
     kind = option["type"]
@@ -169,6 +174,11 @@ def _convert(name: str, option: Mapping[str, Any], raw: Any) -> Any:
         except (TypeError, ValueError):
             word = "a whole number" if kind is int else "a number"
             raise ConfigError(f"{label} must be {word}, got {raw!r}") from None
+    if kind is bool:
+        word = str(raw).strip().lower()
+        if word not in _TRUE and word not in _FALSE:
+            raise ConfigError(f"{label} must be true or false, got {raw!r}")
+        return word in _TRUE
     choices = _choices(option)
     if choices and raw not in choices:
         raise ConfigError(f"{label} must be one of {', '.join(choices)}; got {raw!r}")
@@ -194,13 +204,13 @@ def load_settings(
     values: dict[str, Any] = {}
     for name, option in OPTIONS_SCHEMA.items():
         field_name = name.lower()
-        numeric = option["type"] in (int, float)
+        numeric = option["type"] in (int, float, bool)
         candidates = (
             getattr(args, field_name, None) if args is not None else None,
             environment.get(option["env"]),
             from_file.get(option["env"]),
         )
-        # An empty value cannot be a number, so there it means "not set".
+        # An empty value cannot be a number or a switch, so there it means "not set".
         raw = next((c for c in candidates if c is not None and not (numeric and c == "")), None)
         if raw is None:
             values[field_name] = option["default"]

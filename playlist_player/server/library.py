@@ -114,7 +114,8 @@ class Library:
         if stored is not None:
             info, text = stored
             if info.kind is LyricsKind.SYNCED:
-                payload["lines"] = [line.to_dict() for line in parse_lrc(text)]
+                lines = assets.with_words(self._store, track_id, text, parse_lrc(text))
+                payload["lines"] = [line.to_dict() for line in lines]
             elif info.kind is LyricsKind.PLAIN:
                 payload["plain"] = text
         return payload

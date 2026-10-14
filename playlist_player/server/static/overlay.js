@@ -24,6 +24,7 @@ export const FIELDS = [
   { key: "lines", label: "Lines" },
   { key: "lead_ms", label: "Lead", unit: "ms", slider: [-500, 1000] },
   { key: "fade_ms", label: "Fade", unit: "ms", slider: [0, 1000] },
+  { key: "underline_word", label: "Underline word", unit: "estimated" },
 ];
 
 const SEND_EVERY_MS = 60;
@@ -39,6 +40,7 @@ export function parseValue(rule, raw) {
     const value = Number(raw);
     return value >= rule.min && value <= rule.max ? value : undefined;
   }
+  if (rule.kind === "bool") return typeof raw === "boolean" ? raw : undefined;
   if (rule.kind === "choice") return rule.choices.includes(raw) ? raw : undefined;
   if (rule.kind === "color") {
     return /^(#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})|[a-z]{3,20})$/i.test(raw) ? raw : undefined;
@@ -132,7 +134,9 @@ export function initOverlayPanel({ getJson, postJson }) {
   // ------------------------------- building ------------------------------ //
 
   function setInput(input, value) {
-    if (input.type === "color") {
+    if (input.type === "checkbox") {
+      input.checked = Boolean(value);
+    } else if (input.type === "color") {
       const shown = pickerColor(value);
       if (shown) input.value = shown;
     } else {
@@ -147,6 +151,11 @@ export function initOverlayPanel({ getJson, postJson }) {
       const select = node("select", { id }, ...choices.map((c) => node("option", { value: c, text: c })));
       select.addEventListener("change", () => changed(field.key, select.value));
       return [select];
+    }
+    if (rule.kind === "bool") {
+      const box = node("input", { id, type: "checkbox" });
+      box.addEventListener("change", () => changed(field.key, box.checked));
+      return [box];
     }
     if (rule.kind === "int") {
       const [low, high] = field.slider ?? [rule.min, rule.max];

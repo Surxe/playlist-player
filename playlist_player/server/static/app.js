@@ -2,7 +2,9 @@
 // never reads files. Playback state arrives on one event stream; between snapshots the
 // position is extrapolated locally (see clock.js), so nothing here polls.
 
-import { currentIndex, formatTime, lineProgress, positionAt } from "./clock.js";
+import {
+  alignedWord, currentIndex, currentWord, formatTime, lineProgress, positionAt, wordEnds, wordRanges,
+} from "./clock.js";
 import { initOverlayPanel } from "./overlay.js";
 import { initPlaybackSettings, initSettingsPane, initTrackSettings } from "./settings.js";
 
@@ -25,8 +27,10 @@ const els = {
 let state = null; // the latest PlaybackState snapshot
 let playlist = null; // the playlist shown in the track list
 let tracksById = new Map();
-let lyrics = { trackId: null, kind: "missing", times: [], rows: [] };
+let lyrics = { trackId: null, kind: "missing", times: [], ends: [], words: [], rows: [] };
 let shownLine = -2;
+let shownWord = null; // the underlined word's element, when there is one
+let underlineWord = false; // the overlay's "underline word" setting, which the page follows
 let seeking = false;
 let settingVolume = false;
 
@@ -182,8 +186,9 @@ function markCurrentTrack() {
 // --------------------------------- lyrics -------------------------------- //
 
 async function loadLyrics(trackId) {
-  lyrics = { trackId, kind: "missing", times: [], rows: [] };
+  lyrics = { trackId, kind: "missing", times: [], ends: [], words: [], rows: [] };
   shownLine = -2;
+  shownWord = null;
   els.lyrics.replaceChildren();
   els.lyrics.className = "";
   els.lyricsNote.textContent = "";
@@ -193,8 +198,10 @@ async function loadLyrics(trackId) {
   lyrics.kind = data.kind;
   if (data.kind === "synced") {
     lyrics.times = data.lines.map((line) => line.t_ms);
+    lyrics.ends = wordEnds(data.lines);
+    lyrics.words = data.lines.map((line) => line.words ?? null);
     // A line with no words marks a pause in the singing; it gets no progress bar.
-    lyrics.rows = data.lines.map((line) => element("li", line.text.trim() ? "" : "pause", line.text));
+    lyrics.rows = data.lines.map((line) => lyricRow(line.text));
     els.lyrics.replaceChildren(...lyrics.rows);
     els.lyricsNote.textContent =
       data.timing_confidence === "low" ? "Timing may be off; nudge the offset." : "";
@@ -206,6 +213,18 @@ async function loadLyrics(trackId) {
     els.lyricsNote.textContent =
       data.kind === "instrumental" ? "Instrumental." : "No lyrics for this track.";
   }
+}
+
+// One synced line, each word in an element of its own so that one can be underlined.
+function lyricRow(text) {
+  const row = element("li", text.trim() ? "" : "pause");
+  let at = 0;
+  for (const [start, end] of wordRanges(text)) {
+    row.append(text.slice(at, start), element("span", "", text.slice(start, end)));
+    at = end;
+  }
+  row.append(text.slice(at));
+  return row;
 }
 
 function showLine(index) {
@@ -233,6 +252,26 @@ function showProgress(index, positionS) {
   row.dataset.progress = value;
   row.classList.toggle("timed", progress !== null);
   row.style.setProperty("--progress", value || "0");
+}
+
+// The underline under the word being sung. A line that was aligned to the audio carries
+// the time of each word, in the audio's own time. Any other line gets an estimate from
+// the line's timing (see clock.js), on the same shifted clock as the line and its bar.
+// Off unless the overlay setting turns it on; no word is underlined while a line trails
+// off.
+function showWord(index, positionS) {
+  let word = -1;
+  if (underlineWord && index >= 0 && lyrics.words[index]) {
+    word = alignedWord(lyrics.words[index], positionS * 1000);
+  } else if (underlineWord && index >= 0) {
+    const elapsed = positionS * 1000 + LEAD_MS + state.offset_ms - lyrics.times[index];
+    word = currentWord(lyrics.ends[index], elapsed);
+  }
+  const span = word >= 0 ? lyrics.rows[index].children[word] : null;
+  if (span === shownWord) return;
+  shownWord?.classList.remove("sung");
+  span?.classList.add("sung");
+  shownWord = span ?? null;
 }
 
 // ---------------------------------- state --------------------------------- //
@@ -285,6 +324,7 @@ function tick() {
       const index = currentIndex(lyrics.times, position * 1000, LEAD_MS, state.offset_ms);
       showLine(index);
       showProgress(index, position);
+      showWord(index, position);
     }
   }
   requestAnimationFrame(tick);
@@ -293,7 +333,11 @@ function tick() {
 function connect() {
   const events = new EventSource(`${API}/events`);
   events.addEventListener("state", (event) => applyState(JSON.parse(event.data)));
-  events.addEventListener("overlay", (event) => overlayPanel.apply(JSON.parse(event.data)));
+  events.addEventListener("overlay", (event) => {
+    const overlay = JSON.parse(event.data);
+    underlineWord = Boolean(overlay.settings?.underline_word);
+    overlayPanel.apply(overlay);
+  });
   events.onopen = () => {
     els.connection.textContent = "connected";
     els.connection.className = "pill on";

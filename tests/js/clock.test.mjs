@@ -6,10 +6,15 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  alignedWord,
   currentIndex,
+  currentWord,
   formatTime,
   lineProgress,
   positionAt,
+  syllables,
+  wordEnds,
+  wordRanges,
 } from "../../playlist_player/server/static/clock.js";
 
 const table = JSON.parse(
@@ -102,4 +107,47 @@ test("lineProgress stays within 0 and 1 and refuses what has no span", () => {
   assert.equal(lineProgress([], 0, 500), null);
   assert.equal(lineProgress([1000, 1000, 2000], 0, 1000), null); // two lines at one instant
   assert.equal(lineProgress(times, 2, 4500, 0, 0, 3000), null); // a track shorter than its lyrics
+});
+
+// ---- the current word, against the table shared with tests/unit/test_words.py
+
+const words = JSON.parse(
+  readFileSync(new URL("../fixtures/word_cases.json", import.meta.url), "utf8"),
+);
+
+test("syllables: the shared table", () => {
+  for (const c of words.syllables) assert.equal(syllables(c.word), c.expected, c.word);
+});
+
+for (const c of words.tracks) {
+  test(`wordEnds: ${c.name}`, () => {
+    const ends = wordEnds(c.lines);
+    assert.equal(ends.length, c.expected.length);
+    ends.forEach((line, i) => {
+      assert.equal(line.length, c.expected[i].length, `line ${i}`);
+      line.forEach((end, k) => assert.ok(Math.abs(end - c.expected[i][k]) < 1e-6, `line ${i} word ${k}: ${end}`));
+    });
+  });
+}
+
+for (const c of words.moments) {
+  test(`currentWord: ${c.name}`, () => {
+    assert.equal(currentWord(c.ends, c.elapsed_ms), c.expected);
+  });
+}
+
+for (const c of words.aligned) {
+  test(`alignedWord: ${c.name}`, () => {
+    assert.equal(alignedWord(c.words, c.position_ms), c.expected);
+  });
+}
+
+test("alignedWord takes a line with no word times", () => {
+  assert.equal(alignedWord(null, 1000), -1);
+});
+
+test("wordRanges gives offsets into the text", () => {
+  const text = "Se\u00f1or, don't  stop";
+  assert.deepEqual(wordRanges(text).map(([a, b]) => text.slice(a, b)), ["Se\u00f1or,", "don't", "stop"]);
+  assert.deepEqual(wordRanges(""), []);
 });

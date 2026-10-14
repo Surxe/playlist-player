@@ -15,6 +15,7 @@ layer-shell protocol (KDE Plasma, Sway and other wlroots compositors; not GNOME)
 | Command | What it does | Needs |
 |---------|--------------|-------|
 | `sync` | Fetches track list, audio, lyrics and cover art into the cache | network, yt-dlp, ffmpeg |
+| `align` | Optional: times each word of the synced lyrics against the audio | PyTorch and Demucs (`requirements-align.txt`), ffmpeg; a GPU, in practice |
 | `status` | Shows what is cached for a playlist | |
 | `pin` | Chooses the audio for a track by hand | |
 | `serve` | The daemon: owns mpv, publishes playback state, serves the remote-control page | mpv |
@@ -102,6 +103,33 @@ that track again:
 Audio is downloaded for personal, local playback and never redistributed. Whether that
 is acceptable under the terms of the services involved is for you to judge.
 
+## Word timing
+
+Optional, and only of use with the **Underline word** setting. Lyric files time lines,
+not words, so by default the underlined word is an estimate from syllable counts. `align`
+replaces the estimate with what is heard in the audio:
+
+```bash
+.venv/bin/pip install -r requirements-align.txt --extra-index-url https://download.pytorch.org/whl/cu128
+.venv/bin/python -m playlist_player align                 # every cached playlist, resumable
+.venv/bin/python -m playlist_player align <id> --limit 10 # the first ten tracks of one
+.venv/bin/python -m playlist_player align --track <id>    # one track; --force to do it again
+```
+
+For each track with synced lyrics and audio it separates the voice from the music
+(Demucs), has a speech model say which letters it hears in every 20 ms of that voice (MMS
+forced alignment), and places each line's words inside a window around that line's own
+timestamp. The result is `words.json` beside the track's lyrics; the daemon sends it with
+the lyrics, and the overlay and the page use it. Nothing else needs these packages, and a
+track that has not been aligned simply keeps the estimate.
+
+It works line by line. A line the model heard too faintly to trust (a processed or
+buried voice, usually) is left out and keeps the estimate, so one song can have both;
+`align` prints how many lines it placed. Word times are in the audio's own time, so the
+track's offset does not move them, though a large change of offset moves where lines are
+looked for and the track is aligned again on the next run. New audio for a track (a pin)
+discards its word times. About five seconds a track on a recent GPU.
+
 ## Playing
 
 ```bash
@@ -132,6 +160,15 @@ next one, which makes an offset readable: if the bar is already part-filled when
 begin, the lyrics are ahead of the song, and if the words begin before it starts, they are
 behind. Lyric files only record when each line starts, so the bar also runs through any
 pause or instrumental that follows the words.
+
+**Underline word** (in the overlay settings, off by default) underlines the word being
+sung, in the overlay and in the lyric pane. Lyric files do not time words, so this is an
+estimate: each word gets a share of its line by its syllables, and a line that lasts much
+longer than its syllables would take at the pace of the lines around it is taken to end
+early, with nothing underlined for the rest (an instrumental, usually). It follows the
+same clock as the line, so it is only as good as the track's offset, and it cannot know
+about uneven phrasing or a note held at the end of a line. Tracks that have been through
+`align` (see Word timing) use the times heard in the audio instead.
 
 **Shuffle** puts the playlist shown in a new random order and keeps it. The track list
 is redrawn in that order, it is the order the playlist plays in from then on, and it is
@@ -380,6 +417,10 @@ deliberately not registered, so a token cannot end up on a command line.
 * **PLAYLIST_PLAYER_OVERLAY_FADE_MS** - Fade duration when a line appears or disappears.
   - Default: `"120"`
   - Command line: `--overlay-fade-ms`
+
+* **PLAYLIST_PLAYER_OVERLAY_UNDERLINE_WORD** - Underline the word being sung, in the overlay and on the page. The word is estimated from the line timing, so it needs the track's offset to be right.
+  - Default: `"false"`
+  - Command line: `--overlay-underline-word`
 
 
 <!-- END_GENERATED_OPTIONS -->
