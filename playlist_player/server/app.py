@@ -13,6 +13,7 @@ import signal
 import sys
 import tempfile
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -178,8 +179,11 @@ def runtime_dir() -> Path:
     return Path(tempfile.gettempdir()) / f"playlist-player-{os.getuid()}"
 
 
-def run(settings: Settings) -> int:
-    """Run the daemon in the foreground until SIGINT or SIGTERM."""
+def run(settings: Settings, *, on_ready: Callable[[Daemon], None] | None = None) -> int:
+    """Run the daemon in the foreground until SIGINT, SIGTERM or SIGHUP.
+
+    ``on_ready`` is called once the daemon is listening, just before it starts serving.
+    """
     store = CacheStore(settings.cache_dir, settings.state_dir)
     OverlaySettings.from_settings(settings)  # a bad overlay setting fails before mpv starts
     player = MpvPlayer(
@@ -211,6 +215,8 @@ def run(settings: Settings) -> int:
         signal.signal(number, stop)
     print(f"playlist-player daemon on {daemon.url} (cache: {settings.cache_dir})", flush=True)
     try:
+        if on_ready is not None:
+            on_ready(daemon)
         daemon.serve_forever()
     finally:
         with contextlib.suppress(Exception):

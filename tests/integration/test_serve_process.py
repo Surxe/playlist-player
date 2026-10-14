@@ -1,4 +1,4 @@
-"""The real ``serve`` command as a process: stopped the ways a person stops it, and restarted.
+"""The real ``serve`` and ``start`` commands as processes: stopped the ways a person stops them.
 
 These run the daemon the way a terminal does, in its own process group with mpv as its
 child, and stop it by signalling the whole group, which is what Ctrl-C and closing the
@@ -35,7 +35,14 @@ pytestmark = [
 class Serve:
     """One run of ``serve``, in its own process group like a command typed at a terminal."""
 
-    def __init__(self, store: CacheStore, runtime: Path, port: int) -> None:
+    def __init__(
+        self,
+        store: CacheStore,
+        runtime: Path,
+        port: int,
+        command: tuple[str, ...] = ("serve",),
+        extra_env: dict[str, str] | None = None,
+    ) -> None:
         self.store, self.port = store, port
         env = {k: v for k, v in os.environ.items() if not k.startswith("PLAYLIST_PLAYER_")}
         env.pop("APIFY_TOKEN", None)
@@ -46,10 +53,11 @@ class Serve:
             PLAYLIST_PLAYER_STATE_DIR=str(store.state_dir),
             PLAYLIST_PLAYER_PORT=str(port),
             PLAYLIST_PLAYER_MPV_AUDIO_OUTPUT="null",
+            **(extra_env or {}),
         )
         self.socket_path = runtime / "playlist-player" / f"mpv-{port}.sock"
         self.process = subprocess.Popen(
-            [sys.executable, "-m", "playlist_player", "serve"],
+            [sys.executable, "-m", "playlist_player", *command],
             cwd=runtime, env=env, start_new_session=True,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )  # fmt: skip
@@ -97,9 +105,24 @@ class Serve:
         marker = f"--input-ipc-server={self.socket_path}"
         return [int(line.split()[0]) for line in listing.splitlines() if marker in line]
 
+    def overlay_pids(self) -> list[int]:
+        """Every overlay that ``start --port`` on this port launched, alive or a zombie."""
+        listing = subprocess.run(
+            ["ps", "-ww", "-eo", "pid=,args="], capture_output=True, text=True, check=True
+        ).stdout
+        marker = f"-m playlist_player overlay --port {self.port}"
+        return [int(line.split()[0]) for line in listing.splitlines() if marker in line]
+
     def signal_group(self, number: int) -> int:
         """Signal the whole process group, as a terminal does. Returns the exit status."""
-        os.killpg(self.process.pid, number)
+        return self._signal(os.killpg, number)
+
+    def signal_daemon(self, number: int) -> int:
+        """Signal the daemon alone, as ``kill`` does. Returns the exit status."""
+        return self._signal(os.kill, number)
+
+    def _signal(self, send, number: int) -> int:
+        send(self.process.pid, number)
         try:
             self.output, _ = self.process.communicate(timeout=10)
         except subprocess.TimeoutExpired:
@@ -108,7 +131,7 @@ class Serve:
         return self.process.returncode
 
     def kill(self) -> None:
-        for pid in self.mpv_pids():
+        for pid in self.mpv_pids() + self.overlay_pids():
             os.kill(pid, signal.SIGKILL)
         if self.process.poll() is None:
             os.killpg(self.process.pid, signal.SIGKILL)
@@ -125,9 +148,11 @@ def serve(store, tmp_path_factory):
         port = probe.getsockname()[1]
     runs: list[Serve] = []
 
-    def start() -> Serve:
-        runs.append(Serve(store, runtime, port))
+    def start(*command: str, **extra_env: str) -> Serve:
+        runs.append(Serve(store, runtime, port, command or ("serve",), extra_env))
         return runs[-1]
+
+    start.port = port
 
     yield start
     for run in runs:
@@ -243,3 +268,23 @@ def test_with_the_fade_in_set_a_restart_starts_silent_and_comes_up_when_played(s
     assert second.state()["volume"] == 33.0
     assert second.signal_group(signal.SIGINT) == 0
     assert saved(store)["volume"] == 33.0 and saved(store)["settings"] == {"fade_in_s": 1.5}
+
+
+def test_start_carries_on_without_an_overlay_that_cannot_run_and_stops_like_serve(serve, store):
+    """``start`` where there is no display: the page still works, and the reason is said once."""
+    run = serve(
+        "start", "--no-browser", "--port", str(serve.port),
+        WAYLAND_DISPLAY="wl-there-is-no-such-display", GDK_BACKEND="wayland", DISPLAY="",
+    )  # fmt: skip
+    deadline = time.monotonic() + 15
+    while run.overlay_pids():
+        assert time.monotonic() < deadline, "the overlay neither ran nor gave up"
+        time.sleep(0.05)
+    time.sleep(1.5)  # the report waits a moment, in case everything is stopping together
+    play_some(run)
+    assert run.signal_group(signal.SIGHUP) == 0
+    assert run.mpv_pids() == []
+    assert run.output.count("the overlay stopped (exit status 1)") == 1
+    assert "closing this terminal, stops playlist-player" in run.output
+    assert "Traceback" not in run.output
+    assert saved(store)["track_id"] == "TRK0001"

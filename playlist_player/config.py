@@ -121,6 +121,19 @@ def add_settings_arguments(parser: ArgumentParser) -> None:
         )
 
 
+def settings_arguments(args: Namespace) -> list[str]:
+    """The settings flags that were given in ``args``, as an argument list again.
+
+    For handing the same settings to a child process running another command.
+    """
+    argv: list[str] = []
+    for name, option in _CLI_SCHEMA.items():
+        value = getattr(args, name.lower(), None)
+        if value is not None:
+            argv += [option["arg"], value]
+    return argv
+
+
 def read_env_file(path: Path) -> dict[str, str]:
     """``KEY=VALUE`` lines from ``path``; an absent file is simply empty.
 

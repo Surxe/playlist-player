@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -23,6 +24,7 @@ import pytest
 
 from playlist_player.config import REPO_ROOT, load_settings
 from playlist_player.server.app import Daemon
+from tests.integration.test_serve_process import serve  # noqa: F401  (a fixture)
 from tests.support.library import PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer
 
@@ -627,3 +629,33 @@ def test_the_overlay_moves_between_monitors_and_can_be_handed_back(
     assert first == chosen and released == chosen
     assert hidden is None and again == chosen
     assert "Traceback" not in overlay.stderr and "WARNING" not in overlay.stderr
+
+
+# ------------------------------- start command ------------------------------- #
+
+
+@pytest.mark.mpv
+@pytest.mark.skipif(shutil.which("mpv") is None, reason="mpv is not installed")
+@pytest.mark.parametrize("stop", ["closing the terminal", "killing the daemon"])
+def test_start_runs_the_overlay_beside_the_daemon_and_takes_it_down_too(
+    compositor,
+    serve,  # noqa: F811
+    stop,
+):
+    """One command is the whole application, and stopping it leaves nothing behind."""
+    run = serve(
+        "start", "--no-browser", "--port", str(serve.port),
+        # By path: the daemon under test gets a runtime directory of its own for mpv.
+        WAYLAND_DISPLAY=str(RUNTIME / "wl-pp-test"), GDK_BACKEND="wayland",
+    )  # fmt: skip
+    wait_until(lambda: run.request("GET", "/overlay")["clients"] == 1, timeout=15)
+    (overlay,) = run.overlay_pids()
+    assert len(run.mpv_pids()) == 1
+
+    if stop == "closing the terminal":
+        assert run.signal_group(signal.SIGHUP) == 0
+    else:
+        assert run.signal_daemon(signal.SIGTERM) == 0
+    assert run.overlay_pids() == [], f"overlay {overlay} outlived the daemon"
+    assert run.mpv_pids() == []
+    assert "the overlay stopped" not in run.output and "Traceback" not in run.output

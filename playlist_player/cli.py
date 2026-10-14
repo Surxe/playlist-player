@@ -12,6 +12,7 @@ Commands:
 * ``serve``    run the daemon: mpv, the HTTP API and the remote-control page
 * ``ctl``      send a transport command to a running daemon
 * ``overlay``  show the current lyric line above other windows
+* ``start``    the whole application at once: ``serve``, ``overlay`` and the page
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ import sys
 from collections.abc import Callable
 
 from . import __version__
-from .config import Settings, add_settings_arguments, load_settings
+from .config import Settings, add_settings_arguments, load_settings, settings_arguments
 from .errors import PlaylistPlayerError
 
 Handler = Callable[[argparse.Namespace, Settings], int]
@@ -190,6 +191,17 @@ def _cmd_overlay(args: argparse.Namespace, settings: Settings) -> int:
     return run(settings, demo=args.demo, snapshot=args.snapshot)
 
 
+def _cmd_start(args: argparse.Namespace, settings: Settings) -> int:
+    from .launch import run
+
+    return run(
+        settings,
+        settings_argv=settings_arguments(args),
+        overlay=not args.no_overlay,
+        open_page=not args.no_browser,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     # Settings flags are shared by every command, so they hang off a parent parser.
     common = argparse.ArgumentParser(add_help=False)
@@ -248,6 +260,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--demo", action="store_true", help="show a placeholder line, for positioning"
     )
     overlay.add_argument("--snapshot", metavar="FILE", help="render one frame to a PNG and exit")
+
+    start = add("start", "Run the daemon and the overlay together, and open the page.", _cmd_start)
+    start.add_argument("--no-overlay", action="store_true", help="do not start the overlay")
+    start.add_argument("--no-browser", action="store_true", help="do not open the page")
 
     return parser
 
