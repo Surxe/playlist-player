@@ -1,12 +1,14 @@
 // The remote-control page. A pure client of the daemon's API: it never plays audio and
 // never reads files. Playback state arrives on one event stream; between snapshots the
-// position is extrapolated locally (see clock.js), so nothing here polls.
+// position is extrapolated locally (see clock.js), so nothing here polls. What moves on
+// its own while a song plays (the time, the slider, the lyric bar) is drawn by a loop that
+// runs only while something it draws is showing and moving; see schedule().
 
 import {
   alignedWord, currentIndex, currentWord, formatTime, lineProgress, positionAt, wordEnds, wordRanges,
 } from "./clock.js";
 import { initOverlayPanel } from "./overlay.js";
-import { initPlaybackSettings, initSettingsPane, initTrackSettings } from "./settings.js";
+import { initPlaybackSettings, initSettingsPane, initSwitches } from "./settings.js";
 
 const API = "/api/v1";
 // Show a line slightly before its timestamp; it reads better than exactly on it.
@@ -33,6 +35,11 @@ let shownWord = null; // the underlined word's element, when there is one
 let underlineWord = false; // the overlay's "underline word" setting, which the page follows
 let seeking = false;
 let settingVolume = false;
+// What the page settings let it draw; both on until the daemon says otherwise.
+const view = { lyrics: true, position: true };
+let loop = null; // the drawing loop while it runs: { kind: "frame" | "timer", id }
+let shownElapsed = null; // what #elapsed and #seek were last set to, to skip repeats
+let shownSeek = null;
 
 async function getJson(path) {
   const response = await fetch(API + path);
@@ -72,7 +79,16 @@ async function postJson(path, body = {}) {
 const overlayPanel = initOverlayPanel({ getJson, postJson });
 initSettingsPane([
   initPlaybackSettings({ getJson, postJson }),
-  initTrackSettings({ getJson, postJson, changed: () => playlist && showPlaylist(playlist.id) }),
+  initSwitches({
+    getJson, postJson, noteId: "track-note",
+    ids: { include_without_lyrics: "include-without-lyrics", include_without_audio: "include-without-audio" },
+    changed: () => playlist && showPlaylist(playlist.id),
+  }),
+  initSwitches({
+    getJson, postJson, noteId: "page-note",
+    ids: { show_lyrics: "show-lyrics", show_position: "show-position" },
+    changed: applyView,
+  }),
   overlayPanel,
 ]);
 
@@ -86,6 +102,10 @@ function element(tag, className, text) {
 // ------------------------------- playlists ------------------------------- //
 
 async function loadPlaylists() {
+  // The session holds the page settings, so it is asked for first: lyrics that are
+  // switched off are then never fetched.
+  const saved = await getJson("/session").catch(() => null);
+  if (saved) applyView(saved.settings);
   const { playlists } = await getJson("/playlists");
   els.playlists.replaceChildren(
     ...playlists.map((p) => {
@@ -99,7 +119,6 @@ async function loadPlaylists() {
     return;
   }
   // The playlist the daemon last played (it resumes it on start), unless one is playing.
-  const saved = await getJson("/session").catch(() => null);
   const playing = state?.playlist_id ?? saved?.playlist_id;
   if (playing && playlists.some((p) => p.id === playing)) els.playlists.value = playing;
   await showPlaylist(els.playlists.value);
@@ -192,9 +211,10 @@ async function loadLyrics(trackId) {
   els.lyrics.replaceChildren();
   els.lyrics.className = "";
   els.lyricsNote.textContent = "";
-  if (!trackId) return;
+  if (!trackId || !view.lyrics) return;
   const data = await getJson(`/tracks/${trackId}/lyrics`).catch(() => null);
-  if (!data || state?.track_id !== trackId) return; // the track changed while fetching
+  // The track changed, or lyrics were switched off, while fetching.
+  if (!data || state?.track_id !== trackId || !view.lyrics) return;
   lyrics.kind = data.kind;
   if (data.kind === "synced") {
     lyrics.times = data.lines.map((line) => line.t_ms);
@@ -213,6 +233,7 @@ async function loadLyrics(trackId) {
     els.lyricsNote.textContent =
       data.kind === "instrumental" ? "Instrumental." : "No lyrics for this track.";
   }
+  schedule(); // synced lines want drawing every frame; anything else does not
 }
 
 // One synced line, each word in an element of its own so that one can be underlined.
@@ -313,21 +334,80 @@ function applyState(next) {
     els.playlists.value = state.playlist_id;
     showPlaylist(state.playlist_id);
   }
+  schedule();
 }
 
-function tick() {
-  if (state) {
-    const position = positionAt(state, Date.now());
-    if (!seeking) els.seek.value = String(position);
-    els.elapsed.textContent = formatTime(position);
-    if (lyrics.kind === "synced" && lyrics.trackId === state.track_id) {
-      const index = currentIndex(lyrics.times, position * 1000, LEAD_MS, state.offset_ms);
-      showLine(index);
-      showProgress(index, position);
-      showWord(index, position);
+// The page settings: what is switched off is hidden, and not drawn or fetched either.
+function applyView(settings) {
+  const hadLyrics = view.lyrics;
+  view.lyrics = settings.show_lyrics !== false;
+  view.position = settings.show_position !== false;
+  document.body.classList.toggle("no-lyrics", !view.lyrics);
+  document.body.classList.toggle("no-position", !view.position);
+  shownElapsed = shownSeek = null; // draw them afresh if they are showing again
+  // Lyrics switched off are dropped; switched back on, the current track's are fetched.
+  if (view.lyrics !== hadLyrics) loadLyrics(view.lyrics ? state?.track_id ?? null : null);
+  schedule();
+}
+
+// Everything that follows the position, drawn once for now. Nothing is written that
+// would not change what is on screen.
+function draw() {
+  if (!state) return;
+  const position = positionAt(state, Date.now());
+  if (view.position) {
+    const seek = Math.round(position * 10) / 10; // the slider's own step
+    if (!seeking && seek !== shownSeek) {
+      els.seek.value = String(seek);
+      shownSeek = seek;
+    }
+    const elapsed = formatTime(position);
+    if (elapsed !== shownElapsed) {
+      els.elapsed.textContent = elapsed;
+      shownElapsed = elapsed;
     }
   }
-  requestAnimationFrame(tick);
+  if (view.lyrics && lyrics.kind === "synced" && lyrics.trackId === state.track_id) {
+    const index = currentIndex(lyrics.times, position * 1000, LEAD_MS, state.offset_ms);
+    showLine(index);
+    showProgress(index, position);
+    showWord(index, position);
+  }
+}
+
+// How often the page has to draw: every frame while synced lyrics are showing (the bar
+// and the underline move smoothly), once a second for the time alone, and not at all
+// while nothing is playing or nothing that moves is showing.
+function loopKind() {
+  if (!state || state.paused || state.status !== "playing") return null;
+  if (view.lyrics && lyrics.kind === "synced" && lyrics.trackId === state.track_id) return "frame";
+  return view.position ? "timer" : null;
+}
+
+// Milliseconds until the time shown next changes: the next whole second of the song.
+function untilNextSecond() {
+  const position = positionAt(state, Date.now());
+  const left = (Math.floor(position) + 1 - position) / (state.speed || 1);
+  return Math.max(20, Math.ceil(left * 1000) + 5);
+}
+
+// Draw now, then start, keep or stop the loop to suit. Called whenever what it depends
+// on changes: a state event, a page setting, lyrics loaded.
+function schedule() {
+  draw();
+  const kind = loopKind();
+  if ((loop?.kind ?? null) === kind) return;
+  if (loop?.kind === "frame") cancelAnimationFrame(loop.id);
+  else if (loop) clearTimeout(loop.id);
+  loop = null;
+  if (!kind) return;
+  const next = (step) =>
+    kind === "frame" ? requestAnimationFrame(step) : setTimeout(step, untilNextSecond());
+  const step = () => {
+    draw();
+    loop = { kind, id: next(step) };
+  };
+  loop = { kind, id: next(step) };
 }
 
 function connect() {
@@ -336,6 +416,7 @@ function connect() {
   events.addEventListener("overlay", (event) => {
     const overlay = JSON.parse(event.data);
     underlineWord = Boolean(overlay.settings?.underline_word);
+    draw(); // the underline follows at once, even while paused
     overlayPanel.apply(overlay);
   });
   events.onopen = () => {
@@ -366,7 +447,10 @@ els.prev.addEventListener("click", () => post("/player/prev"));
 els.next.addEventListener("click", () => post("/player/next"));
 els.stop.addEventListener("click", () => post("/player/stop"));
 
-els.seek.addEventListener("input", () => { seeking = true; });
+els.seek.addEventListener("input", () => {
+  seeking = true;
+  shownSeek = null; // whatever the daemon says next is drawn, even if it was shown before
+});
 els.seek.addEventListener("change", async () => {
   await post("/player/seek", { position_s: Number(els.seek.value) });
   seeking = false;
@@ -414,4 +498,3 @@ document.addEventListener("keydown", (event) => {
 
 connect();
 loadPlaylists().catch((error) => { els.coverage.textContent = String(error); });
-requestAnimationFrame(tick);

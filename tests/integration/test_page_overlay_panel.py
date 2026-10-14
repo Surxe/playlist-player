@@ -458,6 +458,96 @@ def test_the_track_switches_take_tracks_out_of_the_list_and_put_them_back(daemon
     assert shot.stat().st_size > 0
 
 
+def test_the_page_switches_hide_the_lyrics_and_the_position_and_are_kept(daemon, tmp_path):
+    queue = daemon.routes._library.queue_for(PLAYLIST_ID)
+    daemon.player.load_queue(queue, paused=True)
+    daemon.player.position = 1.0
+    daemon.player._publish()
+    shown = "(id) => getComputedStyle(t.el(id)).display !== 'none'"
+    results = drive(daemon, tmp_path, [
+        *OPEN,
+        {"wait": "document.querySelectorAll('#lyrics li').length > 0"},
+        {"eval": f"window.shown = {shown}"},
+        {"wait": "t.el('show-lyrics').checked && t.el('show-position').checked"},
+        {"eval": "t.el('show-lyrics').click()"},
+        {"wait": "!shown('lyrics-pane')"},
+        {"eval": "[t.el('lyrics').children.length, shown('seek-row')]"},
+        {"eval": "t.el('show-position').click()"},
+        {"wait": "!shown('seek-row')"},
+        {"eval": "t.el('show-lyrics').click()"},
+        {"wait": "shown('lyrics-pane') && document.querySelectorAll('#lyrics li').length > 0"},
+        {"eval": "document.querySelector('#lyrics li.current')?.textContent ?? null"},
+    ])[len(OPEN):]  # fmt: skip
+    assert results[5] == [0, True]  # the lines are dropped, not just hidden
+    assert results[-1]  # back on, the current track's lines are fetched and followed
+    settings = daemon.session.document()["settings"]
+    assert settings["show_lyrics"] is True and settings["show_position"] is False
+
+
+# Counts what the page does from here on: animation frames asked for, changes to the
+# time and the lyric pane, and writes to the slider (a property, so no mutation shows it).
+WATCH = """(() => {
+  window.seen = { frames: 0, elapsed: 0, lyrics: 0, seek: 0 };
+  const ask = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = (step) => { seen.frames += 1; return ask(step); };
+  const watch = (id, key) => new MutationObserver((records) => { seen[key] += records.length; })
+    .observe(document.getElementById(id),
+      { childList: true, subtree: true, characterData: true, attributes: true });
+  watch('elapsed', 'elapsed');
+  watch('lyrics', 'lyrics');
+  const seek = document.getElementById('seek');
+  const value = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  Object.defineProperty(seek, 'value', {
+    get() { return value.get.call(this); },
+    set(v) { seen.seek += 1; value.set.call(this, v); },
+  });
+})()"""
+PLAY = (
+    "fetch('/api/v1/player/play', {method: 'POST', body: '{}',"
+    " headers: {'Content-Type': 'application/json'}}).then((r) => r.ok)"
+)
+
+
+def watched(daemon, tmp_path, ms: int, *, play: bool) -> dict:
+    """What the page did over ``ms`` once settled, paused or (with ``play``) playing."""
+    queue = daemon.routes._library.queue_for(PLAYLIST_ID)
+    daemon.player.load_queue(queue, paused=True)
+    daemon.player.position = 1.0
+    daemon.player._publish()
+    start = [{"eval": PLAY}, {"wait": "t.el('toggle').textContent === 'Pause'"}] if play else []
+    return drive(daemon, tmp_path, [
+        {"wait": "document.getElementById('playlists').options.length"},
+        {"eval": HELPERS},
+        {"wait": "t.text('title') !== 'Nothing playing'"},
+        *start,
+        {"eval": "t.pause(300)"},
+        {"eval": WATCH},
+        {"eval": f"t.pause({ms})"},
+        {"eval": "seen"},
+    ])[-1]  # fmt: skip
+
+
+def test_a_paused_page_draws_nothing(daemon, tmp_path):
+    assert watched(daemon, tmp_path, 600, play=False) == {
+        "frames": 0, "elapsed": 0, "lyrics": 0, "seek": 0,
+    }  # fmt: skip
+
+
+def test_with_lyrics_and_position_off_a_playing_page_draws_nothing(daemon, tmp_path):
+    daemon.session.set_settings({"show_lyrics": False, "show_position": False})
+    assert watched(daemon, tmp_path, 1500, play=True) == {
+        "frames": 0, "elapsed": 0, "lyrics": 0, "seek": 0,
+    }  # fmt: skip
+
+
+def test_with_only_the_position_shown_the_page_draws_once_a_second(daemon, tmp_path):
+    daemon.session.set_settings({"show_lyrics": False})
+    seen = watched(daemon, tmp_path, 2200, play=True)
+    assert seen["frames"] == 0 and seen["lyrics"] == 0
+    # Each new second of the song is written once: two or three of them in 2.2 s.
+    assert 2 <= seen["elapsed"] <= 3 and 2 <= seen["seek"] <= 3
+
+
 # The word the page underlines in the current lyric line, and how it is drawn.
 SUNG = """(() => {
   const words = document.querySelectorAll('#lyrics li.current span.sung');

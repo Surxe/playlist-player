@@ -65,6 +65,10 @@ main {
 
 #tracks-pane, #lyrics-pane { overflow-y: auto; min-height: 0; }
 #tracks-pane { border-right: 1px solid var(--line); }
+/* The page settings: what is switched off is not drawn at all. */
+body.no-lyrics main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+body.no-lyrics #lyrics-pane, body.no-position #seek-row { display: none; }
+body.no-lyrics #tracks-pane { border: none; }
 
 ol { list-style: none; margin: 0; padding: 0; }
 

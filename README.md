@@ -195,6 +195,15 @@ longer shown. A change applies at once, to the queue that is playing too; the so
 is on carries on even if it is one of those left out. A shuffled order is not disturbed:
 a track that is left out keeps its place for when it is included again.
 
+**Page** (also under **Settings**) keeps the page light. **Show lyrics** off hides the
+lyric pane, with its bar and underline, and stops the page from fetching lyrics at all;
+the overlay is not affected. **Show time and position** off hides the elapsed time and
+the slider. The page only redraws while something it shows is moving: every frame for
+synced lyrics, once a second for the time alone, and not at all while paused or with
+both switches off. The lyric offset is set in the lyric pane, so turn lyrics back on to
+adjust it. Media keys and `ctl` go to the daemon, not the page, and work even with the
+page closed; `start --no-browser` is the lightest way to run.
+
 `ctl` exists so a desktop shortcut can pause from inside a fullscreen application. With
 `PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN` set to the plugin's path (Debian:
 `/usr/lib/mpv-mpris/mpris.so`), the keyboard's media keys work too.

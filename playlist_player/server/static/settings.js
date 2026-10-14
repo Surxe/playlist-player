@@ -58,14 +58,14 @@ export function initPlaybackSettings({ getJson, postJson }) {
   };
 }
 
-// The tracks section: which tracks a playlist is made of. `changed` is called after a
-// switch is saved, so the track list can be drawn again without the tracks left out.
-export function initTrackSettings({ getJson, postJson, changed }) {
-  const boxes = {
-    include_without_lyrics: document.getElementById("include-without-lyrics"),
-    include_without_audio: document.getElementById("include-without-audio"),
-  };
-  const note = document.getElementById("track-note");
+// A section of on/off switches kept in the daemon's session: `ids` maps each setting's
+// name to its checkbox's id. `changed` is called with every setting in force after a
+// switch is saved, so the page can follow it at once.
+export function initSwitches({ getJson, postJson, ids, noteId, changed }) {
+  const boxes = Object.fromEntries(
+    Object.entries(ids).map(([name, id]) => [name, document.getElementById(id)]),
+  );
+  const note = document.getElementById(noteId);
 
   function show(settings) {
     for (const [name, box] of Object.entries(boxes)) box.checked = settings[name];
@@ -77,7 +77,7 @@ export function initTrackSettings({ getJson, postJson, changed }) {
       note.textContent = result.ok ? "" : result.error;
       if (result.ok) {
         show(result.data.settings);
-        changed();
+        changed(result.data.settings);
       } else {
         box.checked = !box.checked; // it was not taken: show what is still in force
       }
