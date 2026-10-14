@@ -25,6 +25,11 @@ audio (which are never queued) are not listed either. A change applies at once, 
 queue that is playing too. Neither touches a kept order: a track that is left out keeps
 its place for when it is let back in.
 
+The last two say what the remote-control page draws: ``show_lyrics`` (the lyric pane, with
+its progress bar and underline) and ``show_position`` (the elapsed time and seek slider),
+both on by default. They change nothing in playback; with both off the page does no work
+between state events.
+
 Nothing is written before the daemon has tried to resume. Until then the player is only
 reporting what it started with, and that must not overwrite what was saved.
 """
@@ -53,6 +58,9 @@ _REDRAWS = 8
 MAX_FADE_IN_S = 30.0
 # Which tracks a playlist is made of. Both default to on: nothing is left out.
 TRACK_FILTERS = ("include_without_lyrics", "include_without_audio")
+# What the remote-control page draws. Both default to on; neither changes playback.
+PAGE_SWITCHES = ("show_lyrics", "show_position")
+SWITCHES = TRACK_FILTERS + PAGE_SWITCHES
 
 
 class SettingError(ValueError):
@@ -133,22 +141,22 @@ class PlaybackSession:
         value = _number(self._data["settings"].get("fade_in_s"))
         return value if value is not None and 0 <= value <= MAX_FADE_IN_S else 0.0
 
-    def _includes(self, name: str) -> bool:
-        """Whether a track filter lets its tracks in. Anything but a stored ``False`` does."""
+    def _switch_on(self, name: str) -> bool:
+        """Whether a switch is on. Anything but a stored ``False`` is on."""
         return self._data["settings"].get(name) is not False
 
     def _settings(self) -> dict[str, Any]:
         """Every setting as it is in force. Lock held."""
         return {
             "fade_in_s": self._fade_in_s(),
-            **{name: self._includes(name) for name in TRACK_FILTERS},
+            **{name: self._switch_on(name) for name in SWITCHES},
         }
 
     def set_settings(self, changes: dict[str, Any]) -> dict[str, Any]:
         """Change playback settings. All of ``changes`` applies, or none of it does."""
         accepted: dict[str, Any] = {}
         for key, value in changes.items():
-            if key in TRACK_FILTERS:
+            if key in SWITCHES:
                 if not isinstance(value, bool):
                     raise SettingError(f"{key} must be true or false; got {value!r}")
                 accepted[key] = value
@@ -167,7 +175,7 @@ class PlaybackSession:
                 before = self._settings()
                 self._data["settings"].update(accepted)
                 self._save()
-                refiltered = any(before[name] != self._includes(name) for name in TRACK_FILTERS)
+                refiltered = any(before[name] != self._switch_on(name) for name in TRACK_FILTERS)
             playing = self._player.bus.current.playlist_id
             if refiltered and playing is not None:
                 try:
@@ -210,7 +218,7 @@ class PlaybackSession:
         """
         playable = self._library.playable_ids(playlist_id)
         order = self._kept_order(playlist_id, playable) or playable
-        if not self._includes("include_without_lyrics"):
+        if not self._switch_on("include_without_lyrics"):
             synced = set(self._library.playable_ids(playlist_id, synced_only=True))
             order = [track_id for track_id in order if track_id in synced or track_id == keep]
             if not order:
@@ -272,8 +280,8 @@ class PlaybackSession:
         playable = [track["id"] for track in tracks if track["has_audio"]]
         with self._lock:
             order = self._kept_order(playlist["id"], playable)
-            lyricless = self._includes("include_without_lyrics")
-            audioless = self._includes("include_without_audio")
+            lyricless = self._switch_on("include_without_lyrics")
+            audioless = self._switch_on("include_without_audio")
         if order is not None:
             by_id = {track["id"]: track for track in tracks}
             unplayable = [track for track in tracks if not track["has_audio"]]

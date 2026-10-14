@@ -464,6 +464,22 @@ def test_changing_a_filter_brings_the_playing_queue_up_to_date(store, library):
     calls = len(player.calls)
     session.set_settings({"fade_in_s": 2, "include_without_lyrics": True})
     assert len(player.calls) == calls
+    session.set_settings({"show_lyrics": False, "show_position": False})
+    assert len(player.calls) == calls
+
+
+def test_the_page_switches_are_on_until_turned_off_and_then_kept(store, library):
+    session, _ = session_on(store, library)
+    settings = session.document()["settings"]
+    assert settings["show_lyrics"] is True and settings["show_position"] is True
+    changed = session.set_settings({"show_lyrics": False, "show_position": False})["settings"]
+    assert changed["show_lyrics"] is False and changed["show_position"] is False
+    assert saved(store)["settings"] == {"show_lyrics": False, "show_position": False}
+    reloaded = session_on(store, library)[0].document()["settings"]
+    assert reloaded["show_lyrics"] is False and reloaded["show_position"] is False
+    with pytest.raises(SettingError, match="show_position must be true or false"):
+        session.set_settings({"show_lyrics": True, "show_position": "off"})
+    assert session.document()["settings"]["show_lyrics"] is False  # none of it applied
 
 
 def test_the_song_that_is_playing_or_asked_for_stays_even_if_the_filter_leaves_it_out(
