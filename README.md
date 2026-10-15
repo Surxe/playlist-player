@@ -145,8 +145,10 @@ beside it and opens the page in your browser, all from one terminal, and that te
 is the application: Ctrl-C in it, or closing it, stops the daemon, mpv and the overlay
 together, after the daemon has saved where it was. Run it a second time while it is
 already running and it only opens the page. If the overlay cannot run here (no
-layer-shell, no display) that is said once and the rest carries on. `--no-overlay` and
-`--no-browser` leave either part out. To put it behind a desktop launcher, have the
+layer-shell, no display) that is said once and the rest carries on. The overlay can also
+be switched off and on from the page (see The overlay), and `start` stops or starts it to
+match. `--no-overlay` and `--no-browser` leave either part out; with `--no-overlay` the
+page cannot switch the overlay on. To put it behind a desktop launcher, have the
 launcher open a terminal running `start`; `playlist_player/server/static/icon.svg` is
 the icon the page uses and serves as the launcher's too.
 
@@ -228,6 +230,15 @@ screen only while a line is due: it is removed (not just made transparent) when 
 pauses, between lines, for tracks without synced lyrics, and whenever the daemon is not
 running. It is a client of the daemon's API and nothing more.
 
+**Show lyrics on top of other windows** (at the top of the Overlay section under
+**Settings**) switches the overlay off and on. Off, the overlay program is closed, not
+hidden, so it takes no memory or processor time until it is switched on again; its
+settings are kept either way, and the choice is remembered for the next start. This works
+for the overlay that `start` runs. One started by hand (`overlay` beside `serve`) is not
+playlist-player's to close, so under `serve` or `start --no-overlay` the switch is greyed
+out. If the overlay stops by itself, the page says so, and switching it off and on tries
+again.
+
 ### Positioning and styling it
 
 Open the page and press **Settings**. The Overlay section changes a running overlay as you move
@@ -253,7 +264,7 @@ fullscreen.
 | Path | Holds |
 |------|-------|
 | `cache/` | Everything fetched: track lists, audio, lyrics, covers. Safe to delete; `sync` rebuilds it. |
-| `state/` | What you changed by hand: lyric offsets, audio pins, and overlay settings set from the page. Not rebuilt. |
+| `state/` | What you changed by hand: lyric offsets, audio pins, and overlay settings set from the page (with whether the overlay is switched on). Not rebuilt. |
 | `state/session.json` | Each shuffled playlist's order, and what the daemon resumes: the playlist, song, position and volume, with the settings made on the page (fade in, which tracks are included). Rewritten as playback changes; deleting it just starts fresh. |
 
 Both are gitignored and sit in the repo by default; `PLAYLIST_PLAYER_CACHE_DIR` and

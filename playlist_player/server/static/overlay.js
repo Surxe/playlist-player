@@ -84,8 +84,8 @@ export function initOverlayPanel({ getJson, postJson }) {
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("overlay-status"), preview: $("overlay-preview"), form: $("overlay-form"),
-    reset: $("overlay-reset"),
-    note: $("overlay-note"),
+    reset: $("overlay-reset"), enabled: $("overlay-enabled"),
+    note: $("overlay-note"), problem: $("overlay-problem"),
   };
   const rows = new Map(); // key -> { row, inputs, drop }
   let rules = null;
@@ -225,8 +225,18 @@ export function initOverlayPanel({ getJson, postJson }) {
       }
     }
     const running = doc.clients > 0;
-    els.status.textContent = running ? "overlay running" : "overlay not running";
+    const enabled = doc.enabled !== false;
+    els.status.textContent = !enabled ? "overlay off" : running ? "overlay running" : "overlay not running";
     els.status.className = `pill ${running ? "on" : "off"}`;
+    // Only an overlay that playlist-player started itself can be switched from here.
+    els.enabled.checked = enabled;
+    els.enabled.disabled = !doc.managed;
+    els.enabled.parentElement.title = doc.managed
+      ? ""
+      : "The overlay is run separately here, so it cannot be switched on or off from this page";
+    els.problem.textContent = doc.problem ?? "";
+    els.preview.disabled = !enabled;
+    if (!enabled && els.preview.checked) setPreview(false);
     els.reset.disabled = !Object.keys(doc.overrides).length;
   }
 
@@ -274,6 +284,12 @@ export function initOverlayPanel({ getJson, postJson }) {
   }
 
   els.preview.addEventListener("change", () => setPreview(els.preview.checked));
+  els.enabled.addEventListener("change", async () => {
+    const result = await postJson("/overlay/enabled", { enabled: els.enabled.checked });
+    els.note.textContent = result.ok ? "" : result.error;
+    if (result.ok) apply(result.data);
+    else render(); // put the switch back to what the daemon actually holds
+  });
   els.form.addEventListener("submit", (event) => event.preventDefault());
   els.reset.addEventListener("click", async () => {
     pending = {};

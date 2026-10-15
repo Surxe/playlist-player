@@ -11,6 +11,8 @@ import pytest
 
 from playlist_player import cli, launch
 from playlist_player.config import load_settings, settings_arguments
+from playlist_player.overlay_settings import OverlaySettings
+from playlist_player.server.overlay_config import OverlayConfig
 
 SLEEP = [sys.executable, "-c", "import time; time.sleep(60)"]
 
@@ -26,9 +28,22 @@ def test_settings_flags_given_to_start_are_handed_on_as_given():
     assert load_settings(cli.build_parser().parse_args(command[3:])) == load_settings(args)
 
 
+def config(*, enabled: bool = True) -> OverlayConfig:
+    made = OverlayConfig(OverlaySettings.from_settings(load_settings()))
+    made._enabled = enabled
+    return made
+
+
+def wait_for(condition, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.02)
+
+
 def test_a_running_overlay_is_stopped_and_that_is_not_reported(capfd):
-    overlay = launch.Overlay(SLEEP, threading.Event())
-    overlay.start()
+    overlay = launch.Overlay(SLEEP, config(), threading.Event())
+    overlay.follow()
     process = overlay._process
     assert process.poll() is None
     overlay.stop()
@@ -37,25 +52,59 @@ def test_a_running_overlay_is_stopped_and_that_is_not_reported(capfd):
     assert capfd.readouterr().err == ""
 
 
-def test_an_overlay_that_ends_by_itself_is_reported(capfd, monkeypatch):
+def test_the_overlay_follows_the_switch_and_is_not_reported_when_switched_off(capfd):
+    switch = config()
+    overlay = launch.Overlay(SLEEP, switch, threading.Event())
+    overlay.follow()
+    assert switch.snapshot()["managed"] is True
+    first = overlay._process
+    switch.set_enabled(False)
+    assert first.poll() is not None and overlay._process is None
+    switch.set_enabled(True)
+    second = overlay._process
+    assert second is not first and second.poll() is None
+    time.sleep(1.2)  # past the moment a stop by itself would be reported
+    assert capfd.readouterr().err == ""
+    overlay.stop()
+    assert second.poll() is not None
+    switch.set_enabled(False)  # no longer followed: nothing to do, nothing raised
+    switch.set_enabled(True)
+    assert overlay._process is None
+
+
+def test_switched_off_it_is_not_started_at_all(capfd):
+    overlay = launch.Overlay(SLEEP, config(enabled=False), threading.Event())
+    overlay.follow()
+    assert overlay._process is None
+    assert "switched off" in capfd.readouterr().out
+    overlay.stop()
+
+
+def test_an_overlay_that_ends_by_itself_is_reported_and_restarted_only_when_switched(
+    capfd, monkeypatch
+):
     stopping = threading.Event()
     monkeypatch.setattr(stopping, "wait", lambda _timeout: False)  # nothing else is stopping
-    overlay = launch.Overlay([sys.executable, "-c", "raise SystemExit(3)"], stopping)
-    overlay.start()
-    overlay._process.wait()
-    deadline = time.monotonic() + 5
-    err = ""
-    while "overlay stopped" not in err and time.monotonic() < deadline:
-        err += capfd.readouterr().err
-        time.sleep(0.02)
-    assert "the overlay stopped (exit status 3)" in err
+    switch = config()
+    overlay = launch.Overlay([sys.executable, "-c", "raise SystemExit(3)"], switch, stopping)
+    overlay.follow()
+    wait_for(lambda: switch.snapshot()["problem"])
+    assert "the overlay stopped (exit status 3)" in capfd.readouterr().err
+    assert overlay._process is None  # and not started again on its own
+    switch.set_enabled(False)
+    assert switch.snapshot()["problem"] == ""
+    switch.set_enabled(True)
+    assert overlay._process is not None  # switched off and on: tried again
+    wait_for(lambda: switch.snapshot()["problem"])
     overlay.stop()  # nothing left to stop; must not raise
 
 
 @pytest.fixture
 def fake_serve(monkeypatch):
     """Stands in for the daemon: reports ready, then returns as if it had been stopped."""
-    daemon = SimpleNamespace(stopping=threading.Event(), url="http://127.0.0.1:9100")
+    daemon = SimpleNamespace(
+        stopping=threading.Event(), url="http://127.0.0.1:9100", overlay=config()
+    )
     seen = SimpleNamespace(daemon=daemon, calls=0, overlays=[])
 
     def serve(settings, *, on_ready):
@@ -66,14 +115,14 @@ def fake_serve(monkeypatch):
         return 0
 
     started: list[launch.Overlay] = []
-    real_start = launch.Overlay.start
+    real_follow = launch.Overlay.follow
 
-    def start(self):
+    def follow(self):
         started.append(self)
-        real_start(self)
+        real_follow(self)
 
     monkeypatch.setattr(launch, "serve", serve)
-    monkeypatch.setattr(launch.Overlay, "start", start)
+    monkeypatch.setattr(launch.Overlay, "follow", follow)
     monkeypatch.setattr(launch, "overlay_command", lambda argv: [*SLEEP, *argv])
     monkeypatch.setattr(launch, "is_listening", lambda _settings: False)
     return seen
@@ -94,6 +143,7 @@ def test_start_can_leave_out_the_overlay_and_the_page(fake_serve):
     opened: list[str] = []
     assert launch.run(load_settings(), overlay=False, open_page=False, open_url=opened.append) == 0
     assert fake_serve.calls == 1 and fake_serve.overlays == [] and opened == []
+    assert fake_serve.daemon.overlay.snapshot()["managed"] is False  # not switchable either
 
 
 def test_started_a_second_time_it_only_opens_the_page(fake_serve, monkeypatch):

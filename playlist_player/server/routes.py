@@ -127,6 +127,7 @@ class Routes:
                 ("POST", re.compile(rf"{API}/overlay"), self._overlay_update),
                 ("POST", re.compile(rf"{API}/overlay/reset"), self._overlay_reset),
                 ("POST", re.compile(rf"{API}/overlay/preview"), self._overlay_preview),
+                ("POST", re.compile(rf"{API}/overlay/enabled"), self._overlay_enabled),
             ]
 
     def dispatch(self, method: str, path: str, body: bytes = b"") -> Response:
@@ -273,6 +274,14 @@ class Routes:
         if not 0 <= seconds <= MAX_PREVIEW_S:
             raise ApiError(400, f"seconds must be between 0 and {MAX_PREVIEW_S:g}")
         return Response.json(self._overlay.preview(seconds))
+
+    def _overlay_enabled(self, body: dict[str, Any]) -> Response:
+        """Switch the overlay on or off: ``{"enabled": true|false}``."""
+        assert self._overlay is not None
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ApiError(400, "enabled must be true or false")
+        return Response.json(self._overlay.set_enabled(enabled))
 
     # ------------------------------- session ------------------------------- #
 

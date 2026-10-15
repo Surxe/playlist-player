@@ -5,11 +5,18 @@ stream, so a change made on the remote-control page reaches a running overlay at
 This object is what that stream reads: a versioned document that wakes its listeners
 whenever it changes, in the same way the state bus does for playback.
 
-Only the overrides are stored (``overlay.json`` in the state directory). The configured
-values are whatever this daemon was started with. Two things in the document are never
-stored: ``preview_until_ms``, which asks the overlay to show a sample line until that
-instant so it can be positioned with nothing playing, and ``clients``, the number of
-overlays listening right now.
+The document also carries the overlay's on/off switch, ``enabled``. Under ``start`` the
+overlay is a child process that follows it: switched off, the overlay is not running at
+all, and switched on it is started again (see :mod:`playlist_player.launch`). The daemon
+only holds the switch; ``managed`` says whether anything is following it, which is not
+the case under ``serve`` or ``start --no-overlay``, where the overlay is run by hand if
+at all. ``problem`` is a sentence for the page when the overlay stopped by itself.
+
+Only the overrides and the switch are stored (``overlay.json`` in the state directory).
+The configured values are whatever this daemon was started with. The rest of the
+document is never stored: ``preview_until_ms``, which asks the overlay to show a sample
+line until that instant so it can be positioned with nothing playing, ``clients``, the
+number of overlays listening right now, ``managed`` and ``problem``.
 """
 
 from __future__ import annotations
@@ -53,6 +60,9 @@ class OverlayConfig:
         self._version = 1
         self._preview_until_ms = 0
         self._clients = 0
+        self._managed = False
+        self._problem = ""
+        self._enabled = True
         self._overrides = self._load()
 
     # ------------------------------- storage ------------------------------- #
@@ -65,14 +75,20 @@ class OverlayConfig:
         except (CacheError, OSError) as exc:
             print(f"playlist_player: {exc}; starting without overlay overrides", file=sys.stderr)
             return {}
-        kept, notes = salvage(stored.get("overrides", {}) if isinstance(stored, dict) else None)
+        if not isinstance(stored, dict):
+            stored = {}
+        self._enabled = stored.get("enabled") is not False  # anything but a stored False is on
+        kept, notes = salvage(stored.get("overrides", {}))
         for note in notes:
             print(f"playlist_player: {note}", file=sys.stderr)
         return prune(self._defaults, kept)
 
-    def _save(self, overrides: Mapping[str, Any]) -> None:
+    def _save(self, overrides: Mapping[str, Any], enabled: bool) -> None:
         if self._store is not None:
-            self._store.write_json(self._store.overlay_json, {"overrides": dict(overrides)})
+            document: dict[str, Any] = {"overrides": dict(overrides)}
+            if not enabled:
+                document["enabled"] = False
+            self._store.write_json(self._store.overlay_json, document)
 
     # -------------------------------- reading ------------------------------- #
 
@@ -80,6 +96,11 @@ class OverlayConfig:
     def version(self) -> int:
         with self._lock:
             return self._version
+
+    @property
+    def enabled(self) -> bool:
+        with self._lock:
+            return self._enabled
 
     def snapshot(self) -> dict[str, Any]:
         """The document as the event stream sends it."""
@@ -91,6 +112,9 @@ class OverlayConfig:
                 "settings": self._defaults.merged(self._overrides).to_dict(),
                 "preview_until_ms": self._preview_until_ms,
                 "clients": self._clients,
+                "enabled": self._enabled,
+                "managed": self._managed,
+                "problem": self._problem,
             }
 
     def describe(self) -> dict[str, Any]:
@@ -141,7 +165,7 @@ class OverlayConfig:
             if overrides == self._overrides:
                 listeners = []
             else:
-                self._save(overrides)
+                self._save(overrides, self._enabled)
                 self._overrides = overrides
                 listeners = self._changed()
         self._notify(listeners)
@@ -151,7 +175,7 @@ class OverlayConfig:
         """Drop every override."""
         with self._lock:
             if self._overrides:
-                self._save({})
+                self._save({}, self._enabled)
                 self._overrides = {}
                 listeners = self._changed()
             else:
@@ -171,6 +195,46 @@ class OverlayConfig:
             listeners = self._changed()
         self._notify(listeners)
         return self.snapshot()
+
+    def set_enabled(self, enabled: bool) -> dict[str, Any]:
+        """Switch the overlay on or off, for whatever follows the switch to act on.
+
+        Raises :class:`~playlist_player.overlay_settings.OverlaySettingError` when nothing
+        follows it, since the switch would then do nothing, and :class:`OSError` or
+        ``CacheError`` if it cannot be saved (in which case nothing changes).
+        """
+        with self._lock:
+            if not self._managed:
+                raise OverlaySettingError(
+                    "the overlay is not started by playlist-player here, so it cannot be "
+                    "switched on or off from the page; start playlist-player with `start`"
+                )
+            if enabled == self._enabled:
+                listeners = []
+            else:
+                self._save(self._overrides, enabled)
+                self._enabled = enabled
+                self._problem = ""
+                listeners = self._changed()
+        self._notify(listeners)
+        return self.snapshot()
+
+    def set_managed(self, managed: bool = True) -> None:
+        """Say whether something now follows the switch (``start`` does)."""
+        self._set(_managed=managed)
+
+    def report_problem(self, problem: str) -> None:
+        """Tell the page why the overlay is not running though it is switched on."""
+        self._set(_problem=problem)
+
+    def _set(self, **fields: Any) -> None:
+        with self._lock:
+            if all(getattr(self, name) == value for name, value in fields.items()):
+                return
+            for name, value in fields.items():
+                setattr(self, name, value)
+            listeners = self._changed()
+        self._notify(listeners)
 
     def attach(self) -> None:
         """An overlay started listening."""
