@@ -122,11 +122,14 @@ def status_table(
         f"{'#':>{width}}  {'track':<22}  {'audio':<6}  {'lyrics':<12}  {'delta':>6}  "
         f"{'offset':>6}  title",
     ]
+    review = 0
     for index, status in enumerate(statuses, start=1):
         track = status.track
         delta = f"{status.audio.duration_s - track.duration_s:+.1f}s" if status.audio else ""
         offset = f"{status.state.offset_ms:+d}" if status.state.offset_ms else ""
         audio = _audio_cell(status, audio_miss.get(track.id))
+        # Counted from the cells, not the miss log: the log covers every playlist.
+        review += audio == "review"
         lines.append(
             f"{index:>{width}}  {track.id:<22}  {audio:<6}  "
             f"{_lyrics_cell(status):<12}  {delta:>6}  {offset:>6}  "
@@ -134,7 +137,6 @@ def status_table(
         )
 
     c = coverage(statuses)
-    review = sum(1 for miss in audio_miss.values() if miss.reason == "needs_review")
     lines += [
         "",
         f"{c['tracks']} tracks: {c['ready']} ready (audio and synced lyrics)",
