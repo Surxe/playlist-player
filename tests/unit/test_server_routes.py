@@ -485,6 +485,17 @@ def test_overlay_preview_takes_a_bounded_number_of_seconds(routes):
         assert post(routes, "/overlay/preview", bad)[0].status == 400
 
 
+def test_the_overlay_is_switched_on_and_off_only_where_something_follows_the_switch(routes):
+    response, answer = post(routes, "/overlay/enabled", {"enabled": False})
+    assert response.status == 400 and "cannot be switched on or off" in answer["error"]
+    routes._overlay.set_managed()
+    response, body = post(routes, "/overlay/enabled", {"enabled": False})
+    assert response.status == 200 and body["enabled"] is False
+    assert get(routes, "/overlay")[1]["enabled"] is False
+    for bad in ({"enabled": "no"}, {"enabled": 0}, {}):
+        assert post(routes, "/overlay/enabled", bad)[0].status == 400
+
+
 def test_overlay_endpoints_refuse_other_methods_and_report_a_failed_save(
     routes, store, monkeypatch
 ):

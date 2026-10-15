@@ -211,6 +211,33 @@ def test_the_sample_line_is_asked_for_kept_alive_and_withdrawn(daemon, tmp_path)
     assert daemon.player.calls == []  # the space did not toggle playback
 
 
+def test_the_overlay_switch_turns_it_off_and_on_where_playlist_player_runs_it(daemon, tmp_path):
+    unmanaged = drive(daemon, tmp_path, [*OPEN, {"eval": "t.el('overlay-enabled').disabled"}])
+    assert unmanaged[-1] is True  # under serve the overlay is run by hand: no switch
+
+    daemon.overlay.set_managed()
+    steps = [
+        *OPEN,
+        {"wait": "!t.el('overlay-enabled').disabled && t.el('overlay-enabled').checked"},
+        {"eval": "t.el('overlay-enabled').click()"},
+        {"wait": "t.text('overlay-status') === 'overlay off'"},
+        {"eval": "t.el('overlay-preview').disabled"},
+    ]
+    assert drive(daemon, tmp_path, steps)[-1] is True
+    assert daemon.overlay.enabled is False
+
+    daemon.overlay.report_problem("It stopped.")
+    steps = [
+        *OPEN,
+        {"wait": "!t.el('overlay-enabled').checked"},
+        {"eval": "t.el('overlay-enabled').click()"},
+        {"wait": "t.text('overlay-status') === 'overlay not running'"},
+        {"eval": "t.text('overlay-problem')"},
+    ]
+    assert drive(daemon, tmp_path, steps)[-1] == ""  # switching clears the old problem
+    assert daemon.overlay.enabled is True
+
+
 LISTED = "[...document.querySelectorAll('#tracks li')].map((row) => row.dataset.id)"
 
 

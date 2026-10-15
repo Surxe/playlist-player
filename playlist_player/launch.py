@@ -4,7 +4,9 @@ The daemon runs in this process, exactly as ``serve`` runs it. The overlay is a 
 process: it has to load its layer-shell library before anything else is imported and it
 owns a GTK main loop, so it cannot share this one. It is started once the daemon is
 listening and stopped when the daemon stops, which makes one terminal hold the whole
-application: Ctrl-C there, or closing it, ends all of it.
+application: Ctrl-C there, or closing it, ends all of it. In between it follows the
+overlay switch on the page: switched off, the overlay process is stopped altogether, and
+switched on, it is started again.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from collections.abc import Callable, Sequence
 from .config import Settings
 from .server.app import Daemon
 from .server.app import run as serve
+from .server.overlay_config import OverlayConfig
 
 # How long a stopping overlay gets before it is killed.
 _STOP_TIMEOUT_S = 3.0
@@ -32,23 +35,57 @@ def overlay_command(settings_argv: Sequence[str]) -> list[str]:
 
 
 class Overlay:
-    """The overlay as a child process, for as long as the daemon runs.
+    """The overlay as a child process that follows the daemon's on/off switch.
 
-    An overlay that cannot start, or that ends by itself, is reported and otherwise left
-    alone: the daemon and the page are worth having without it.
+    It runs while the switch is on, for as long as the daemon runs. Switched off, the
+    process is stopped, not hidden, so nothing of the overlay is left running; switched on
+    again, a new one is started. An overlay that cannot start, or that ends by itself, is
+    reported (on the terminal and on the page) and left alone until it is switched off
+    and on again: the daemon and the page are worth having without it.
     """
 
-    def __init__(self, command: Sequence[str], stopping: threading.Event) -> None:
+    def __init__(
+        self, command: Sequence[str], config: OverlayConfig, stopping: threading.Event
+    ) -> None:
         self._command = list(command)
+        self._config = config
         self._stopping = stopping
+        # One start or stop at a time; reentrant because a report wakes the listener.
+        self._acting = threading.RLock()
+        self._following = False  # the switch position last acted on
         self._process: subprocess.Popen[bytes] | None = None
+        self._unsubscribe: Callable[[], None] | None = None
 
-    def start(self) -> None:
+    def follow(self) -> None:
+        """Follow the switch from now on, starting the overlay at once if it is on."""
+        self._config.set_managed(True)
+        self._unsubscribe = self._config.subscribe(self._sync)
+        if not self._config.enabled:
+            print(
+                "The lyric overlay is switched off; it can be switched on in the page's Settings.",
+                flush=True,
+            )
+        self._sync()
+
+    def _sync(self) -> None:
+        # Called after every change to the overlay document, so it acts only on the switch.
+        enabled = self._config.enabled
+        with self._acting:
+            if self._stopping.is_set() or enabled == self._following:
+                return
+            self._following = enabled
+            if enabled:
+                self._start()
+            else:
+                self._end()
+
+    def _start(self) -> None:
         env = dict(os.environ)
         if sys.flags.no_user_site:  # the child gets no more to import than this process
             env["PYTHONNOUSERSITE"] = "1"
-        self._process = subprocess.Popen(self._command, env=env)
-        threading.Thread(target=self._watch, args=(self._process,), daemon=True).start()
+        process = subprocess.Popen(self._command, env=env)
+        self._process = process
+        threading.Thread(target=self._watch, args=(process,), daemon=True).start()
 
     def _watch(self, process: subprocess.Popen[bytes]) -> None:
         status = process.wait()
@@ -56,16 +93,24 @@ class Overlay:
         # takes a moment to say so; that is not an overlay that stopped by itself.
         if self._stopping.wait(1.0):
             return
+        with self._acting:
+            if process is not self._process:
+                return  # switched off, and so stopped on purpose
+            self._process = None
         print(
             f"playlist_player: the overlay stopped (exit status {status}); "
             "the daemon and the page carry on without it",
             file=sys.stderr,
             flush=True,
         )
+        self._config.report_problem(
+            "The overlay stopped unexpectedly; the playlist-player window says why. "
+            "Switch it off and on again to retry."
+        )
 
-    def stop(self) -> None:
-        self._stopping.set()
-        process = self._process
+    def _end(self) -> None:
+        """Stop the overlay process, if one is running. Called with ``_acting`` held."""
+        process, self._process = self._process, None
         if process is None or process.poll() is not None:
             return
         process.terminate()
@@ -74,6 +119,14 @@ class Overlay:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+    def stop(self) -> None:
+        """Stop following the switch and stop the overlay, as the daemon stops."""
+        self._stopping.set()
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+        with self._acting:
+            self._end()
 
 
 def is_listening(settings: Settings) -> bool:
@@ -93,7 +146,10 @@ def run(
     open_page: bool = True,
     open_url: Callable[[str], object] = webbrowser.open,
 ) -> int:
-    """Run the daemon with the overlay beside it until stopped; open the page once it is up."""
+    """Run the daemon with the overlay beside it until stopped; open the page once it is up.
+
+    With ``overlay`` false the overlay is neither started nor switchable from the page.
+    """
     if open_page and is_listening(settings):
         # Started a second time, e.g. from a launcher: show what is already running.
         print(f"playlist-player is already running; opening {settings.base_url}/", flush=True)
@@ -104,9 +160,9 @@ def run(
 
     def ready(daemon: Daemon) -> None:
         if overlay:
-            child = Overlay(overlay_command(settings_argv), daemon.stopping)
+            child = Overlay(overlay_command(settings_argv), daemon.overlay, daemon.stopping)
             children.append(child)
-            child.start()
+            child.follow()
         if open_page:
             open_url(f"{daemon.url}/")
         print("Ctrl-C, or closing this terminal, stops playlist-player.", flush=True)

@@ -129,7 +129,9 @@ def test_the_document_carries_configured_values_overrides_and_the_result(default
     assert (first["clients"], first["preview_until_ms"]) == (0, 0)
     assert set(first) == {
         "version", "defaults", "overrides", "settings", "preview_until_ms", "clients",
+        "enabled", "managed", "problem",
     }  # fmt: skip
+    assert (first["enabled"], first["managed"], first["problem"]) == (True, False, "")
 
     after = config.update({"margin_y": 300, "anchor": "top"})
     assert after["version"] == first["version"] + 1
@@ -242,6 +244,44 @@ def test_attached_overlays_are_counted(defaults):
     config.detach()
     config.detach()  # one too many must not go negative
     assert config.snapshot()["clients"] == 0
+
+
+def test_the_switch_needs_something_following_it(defaults, store):
+    config = OverlayConfig(defaults, store)
+    with pytest.raises(OverlaySettingError, match="cannot be switched on or off"):
+        config.set_enabled(False)
+    assert config.enabled and not store.overlay_json.exists()
+
+
+def test_the_switch_is_stored_beside_the_overrides_and_survives_a_restart(defaults, store):
+    config = OverlayConfig(defaults, store)
+    config.set_managed()
+    config.update({"margin_y": 300})
+    assert config.set_enabled(False)["enabled"] is False
+    assert json.loads(store.overlay_json.read_text()) == {
+        "overrides": {"margin_y": 300}, "enabled": False
+    }  # fmt: skip
+    config.reset()  # the switch is not an override and is not reset with them
+    assert json.loads(store.overlay_json.read_text()) == {"overrides": {}, "enabled": False}
+    again = OverlayConfig(defaults, store)
+    assert again.enabled is False and again.snapshot()["managed"] is False
+    again.set_managed()
+    again.set_enabled(True)
+    assert json.loads(store.overlay_json.read_text()) == {"overrides": {}}
+
+
+def test_a_problem_is_shown_until_the_overlay_is_switched(defaults):
+    config = OverlayConfig(defaults)
+    config.set_managed()
+    heard: list[int] = []
+    config.subscribe(lambda: heard.append(config.version))
+    config.report_problem("it stopped")
+    config.report_problem("it stopped")  # the same again: nothing changed
+    assert config.snapshot()["problem"] == "it stopped" and len(heard) == 1
+    config.set_enabled(True)  # already on: nothing changes, the problem stays
+    assert config.snapshot()["problem"] == "it stopped"
+    config.set_enabled(False)
+    assert config.snapshot()["problem"] == "" and len(heard) == 2
 
 
 def test_concurrent_updates_all_land(defaults, store):
