@@ -16,8 +16,9 @@ its own at boot. A song whose saved position is at its very end starts again fro
 beginning.
 
 Settings. The few settings of playback itself that are set from the page are kept here
-too. One is how long the first sound after a start takes to come up from silence
-(``fade_in_s``; 0, the default, is no fade); it is applied when the daemon starts. The
+too. One is how long the sound takes to come up from silence each time playback is
+resumed after a pause, the paused song a start puts back included (``fade_in_s``; 0, the
+default, is no fade); it is handed to the player on start and again whenever it changes. The
 others say which tracks a playlist is made of: ``include_without_lyrics`` and
 ``include_without_audio``, both on by default. With the first off, tracks that have no
 synced lyrics are neither listed nor queued; with the second off, tracks that have no
@@ -176,6 +177,9 @@ class PlaybackSession:
                 self._data["settings"].update(accepted)
                 self._save()
                 refiltered = any(before[name] != self._switch_on(name) for name in TRACK_FILTERS)
+                fade_in_s = self._fade_in_s()
+            if "fade_in_s" in accepted:
+                self._set_fade_in(fade_in_s)
             playing = self._player.bus.current.playlist_id
             if refiltered and playing is not None:
                 try:
@@ -354,11 +358,13 @@ class PlaybackSession:
             fade_in_s = self._fade_in_s()
             self._saving = True
         if fade_in_s > 0:
-            # Armed now, with nothing playing: whatever is started first comes up gently.
-            try:
-                self._player.fade_in(fade_in_s)
-            except PlaybackError as exc:
-                print(f"playlist_player: no fade-in this time: {exc}", file=sys.stderr)
+            self._set_fade_in(fade_in_s)
+
+    def _set_fade_in(self, seconds: float) -> None:
+        try:
+            self._player.set_fade_in(seconds)
+        except PlaybackError as exc:
+            print(f"playlist_player: no fade-in this time: {exc}", file=sys.stderr)
 
     def _resume_position(self, saved: dict[str, Any], track_id: str) -> float | None:
         position = _number(saved.get("position_s"))

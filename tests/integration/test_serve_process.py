@@ -246,11 +246,15 @@ def mpv_property(run: Serve, name: str):
                     return reply["data"]
 
 
-def test_with_the_fade_in_set_a_restart_starts_silent_and_comes_up_when_played(serve, store):
+def test_with_the_fade_in_set_a_resume_starts_silent_and_comes_up_when_played(serve, store):
     first = serve()
     play_some(first)
     first.request("POST", "/session/settings", {"fade_in_s": 1.5})
-    assert mpv_property(first, "volume-gain") == 0.0  # set for the next start, not this one
+    assert mpv_property(first, "volume-gain") == 0.0  # what is playing carries on as it is
+    first.request("POST", "/player/pause", {})
+    first.wait_for(lambda s: s["status"] == "paused")
+    time.sleep(0.3)
+    assert mpv_property(first, "volume-gain") == pytest.approx(-60.0)  # set for the resume
     assert first.signal_group(signal.SIGINT) == 0
 
     second = serve()

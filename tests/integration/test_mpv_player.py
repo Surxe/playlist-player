@@ -498,7 +498,7 @@ def gain(player) -> float:
     return float(player._command("get_property", "volume-gain"))
 
 
-def test_a_fade_in_is_silent_until_playback_starts_then_rises_and_leaves_the_volume_alone(
+def test_a_fade_in_is_silent_while_paused_then_rises_and_leaves_the_volume_alone(
     make_player, tones
 ):
     player, log = make_player()
@@ -507,7 +507,7 @@ def test_a_fade_in_is_silent_until_playback_starts_then_rises_and_leaves_the_vol
     log.wait_for(lambda s: s.status is PlayerStatus.PAUSED and s.track_id == "T0")
     assert gain(player) == 0.0  # nothing asked for yet
 
-    player.fade_in(1.0)
+    player.set_fade_in(1.0)
     time.sleep(0.3)
     assert gain(player) == pytest.approx(-60.0)  # silent, and staying so while paused
 
@@ -531,23 +531,45 @@ def test_a_fade_in_is_silent_until_playback_starts_then_rises_and_leaves_the_vol
     assert log.bus.current.volume == 40
 
 
-def test_a_fade_in_waits_while_paused_and_carries_on_from_where_it_was(make_player, tones):
+def test_every_resume_fades_in_from_silence_and_a_pause_mid_fade_starts_over(make_player, tones):
     player, log = make_player()
-    player.load_queue(queue_of(tones, [30]), paused=True)
-    state = log.wait_for(lambda s: s.status is PlayerStatus.PAUSED and s.track_id == "T0")
-    player.fade_in(2.0)
-    player.play()
-    log.wait_for(playing("T0"), after=state.version)
-    time.sleep(0.6)
+    player.set_fade_in(1.0)
+    player.load_queue(queue_of(tones, [30]))
+    log.wait_for(playing("T0"))
+    time.sleep(0.2)
+    assert gain(player) == 0.0  # a song played straight away is not a resume
+
     player.pause()
     time.sleep(0.3)
-    held = gain(player)
-    time.sleep(0.6)
-    assert gain(player) == held and -60 < held < 0  # part-way, and not moving
+    assert gain(player) == pytest.approx(-60.0)
     player.play()
-    time.sleep(0.5)
-    assert held < gain(player) < 0  # rising again, not started over and not finished
-    time.sleep(1.6)
+    time.sleep(0.4)
+    part_way = gain(player)
+    assert -60 < part_way < 0
+    player.pause()
+    time.sleep(0.3)
+    assert gain(player) == pytest.approx(-60.0)  # back to silence, not held part-way
+    player.play()
+    time.sleep(1.5)
+    assert gain(player) == 0.0
+
+    player.next()  # skipping while playing does not fade
+    time.sleep(0.3)
+    assert gain(player) == 0.0
+
+
+def test_turning_the_fade_off_while_paused_restores_the_level(make_player, tones):
+    player, log = make_player()
+    player.set_fade_in(2.0)
+    player.load_queue(queue_of(tones, [30]), paused=True)
+    log.wait_for(lambda s: s.status is PlayerStatus.PAUSED and s.track_id == "T0")
+    time.sleep(0.3)
+    assert gain(player) == pytest.approx(-60.0)
+    player.set_fade_in(0)
+    assert gain(player) == 0.0 and player._fade_s is None
+    player.play()
+    log.wait_for(playing("T0"))
+    time.sleep(0.2)
     assert gain(player) == 0.0
 
 
@@ -555,7 +577,7 @@ def test_a_fade_of_no_length_and_an_mpv_without_the_control_do_nothing(
     make_player, tones, monkeypatch, capsys
 ):
     player, log = make_player()
-    player.fade_in(0)
+    player.set_fade_in(0)
     assert gain(player) == 0.0 and player._fade_s is None
 
     real = player._command
@@ -566,8 +588,11 @@ def test_a_fade_of_no_length_and_an_mpv_without_the_control_do_nothing(
         return real(*args)
 
     monkeypatch.setattr(player, "_command", old_mpv)
-    player.fade_in(3.0)  # must not raise
-    assert player._fade_s is None
+    player.set_fade_in(3.0)  # must not raise
+    player.load_queue(queue_of(tones, [5]), paused=True)
+    log.wait_for(lambda s: s.status is PlayerStatus.PAUSED and s.track_id == "T0")
+    time.sleep(0.2)
+    assert player._fade_s is None and player._fade_len == 0
     assert "no fade-in with this mpv" in capsys.readouterr().err
-    player.load_queue(queue_of(tones, [5]))
+    player.play()
     log.wait_for(playing("T0"))  # and playback is unaffected

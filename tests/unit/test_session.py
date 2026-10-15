@@ -368,7 +368,7 @@ def test_a_setting_that_cannot_be_taken_changes_nothing(store, library, changes,
     assert session.document()["settings"]["fade_in_s"] == 4.0
 
 
-def test_a_start_arms_the_fade_in_after_the_song_is_loaded_and_only_when_it_is_on(store, library):
+def test_a_start_sets_the_fade_in_after_the_song_is_loaded_and_only_when_it_is_on(store, library):
     store.write_json(store.session_json, {
         "playlist_id": PLAYLIST_ID, "track_id": "TRK0001", "position_s": 2.5, "volume": 45.0,
         "settings": {"fade_in_s": 4},
@@ -376,22 +376,33 @@ def test_a_start_arms_the_fade_in_after_the_song_is_loaded_and_only_when_it_is_o
     session, player = session_on(store, library)
     session.resume()
     kinds = [call[0] for call in player.calls]
-    assert kinds == ["set_volume", "load_queue", "fade_in"]  # the volume itself is not lowered
-    assert player.calls[-1] == ("fade_in", 4.0)
+    assert kinds == ["set_volume", "load_queue", "set_fade_in"]  # the volume is not lowered
+    assert player.calls[-1] == ("set_fade_in", 4.0)
     assert saved(store)["volume"] == 45.0
 
     off, quiet = session_on(store, library)
     off.set_settings({"fade_in_s": 0})
+    quiet.calls.clear()
     off.resume()
-    assert not any(call[0] == "fade_in" for call in quiet.calls)
+    assert not any(call[0] == "set_fade_in" for call in quiet.calls)
 
 
-def test_the_fade_in_is_armed_even_with_no_song_to_resume(store, library):
-    """Whatever is played first after a start is what comes up gently."""
+def test_the_fade_in_is_set_even_with_no_song_to_resume(store, library):
     store.write_json(store.session_json, {"settings": {"fade_in_s": 2}})
     session, player = session_on(store, library)
     session.resume()
-    assert player.calls == [("fade_in", 2.0)]
+    assert player.calls == [("set_fade_in", 2.0)]
+
+
+def test_a_change_to_the_fade_in_reaches_the_player_at_once(store, library):
+    session, player = session_on(store, library)
+    session.set_settings({"fade_in_s": 3})
+    session.set_settings({"fade_in_s": 0})
+    session.set_settings({"include_without_lyrics": False})
+    assert [call for call in player.calls if call[0] == "set_fade_in"] == [
+        ("set_fade_in", 3.0),
+        ("set_fade_in", 0.0),
+    ]
 
 
 def test_a_stored_fade_in_that_makes_no_sense_counts_as_off(store, library):
@@ -463,9 +474,9 @@ def test_changing_a_filter_brings_the_playing_queue_up_to_date(store, library):
     # A setting that is not a filter, or a filter set to what it was, leaves the queue alone.
     calls = len(player.calls)
     session.set_settings({"fade_in_s": 2, "include_without_lyrics": True})
-    assert len(player.calls) == calls
+    assert player.calls[calls:] == [("set_fade_in", 2.0)]  # the fade only, no queue change
     session.set_settings({"show_lyrics": False, "show_position": False})
-    assert len(player.calls) == calls
+    assert len(player.calls) == calls + 1
 
 
 def test_the_page_switches_are_on_until_turned_off_and_then_kept(store, library):

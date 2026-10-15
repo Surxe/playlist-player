@@ -183,9 +183,12 @@ it is on Spotify. Tracks a later sync adds go to the end of a kept order.
 puts them back when it starts: the same song at the same place, at the same volume, paused.
 It does not begin playing by itself. A song saved at its very end starts from the beginning.
 
-**Fade in** (under **Settings** on the page) makes the music fade in when playlist-player
-starts up, over the number of seconds you set, instead of coming on at full volume; 0, the
-default, turns it off. Your volume is not changed while it fades. It needs mpv 0.37 or
+**Fade in** (under **Settings** on the page) makes the music fade in each time it is
+resumed after a pause, over the number of seconds you set, instead of coming on at full
+volume; 0, the default, turns it off. That includes the first play after playlist-player
+starts, since the remembered song is put back paused; pausing part-way through a fade
+starts the next one from silence. Skipping between songs while playing does not fade. A
+change applies at once. Your volume is not changed while it fades. It needs mpv 0.37 or
 newer; with an older mpv playback simply starts at full level.
 
 **Tracks** (also under **Settings**) chooses which tracks a playlist is made of. Both
