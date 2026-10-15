@@ -10,6 +10,24 @@ it is fetched once.
 Linux only. The overlay additionally needs a Wayland compositor that supports the
 layer-shell protocol (KDE Plasma, Sway and other wlroots compositors; not GNOME).
 
+## What it is and is not
+
+playlist-player is a personal-use tool. It downloads a playlist's audio, lyrics and
+cover art into a local cache for the one person who runs it, plays them back locally
+through mpv, and shows the current lyric line in an overlay. Nothing is re-encoded,
+re-uploaded, shared or redistributed; the daemon listens on loopback only, and no
+endpoint sends or downloads a file.
+
+This repository ships none of that content. `cache/` and `state/` are gitignored, and
+the tests use synthetic data only, so the code here holds no audio, lyrics, track lists
+or cover art. The code is under the MIT License (see `LICENSE`); the audio, lyrics and
+cover art `sync` can fetch are third-party works that stay under their owners' rights
+and the terms of the services they come from.
+
+`sync` reads a playlist's track list from a paid Apify Actor, its lyrics from LRCLIB,
+and its audio through yt-dlp. Use playlist-player only for content you are allowed to
+keep for personal playback, and follow the terms of the services you use it with.
+
 ## How it fits together
 
 | Command | What it does | Needs |
@@ -114,8 +132,9 @@ that track again:
 .venv/bin/python -m playlist_player sync <id> --track <track-id>
 ```
 
-Audio is downloaded for personal, local playback and never redistributed. Whether that
-is acceptable under the terms of the services involved is for you to judge.
+Audio is downloaded for personal, local playback and never redistributed; the boundary
+the tool draws is set out under "What it is and is not" above, and the terms of the
+services it fetches from are yours to follow.
 
 ## Word timing
 

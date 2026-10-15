@@ -3,6 +3,7 @@ name = "playlist-player"
 version = "0.1.0"
 description = "Cache a Spotify playlist's audio and time-synced lyrics, play it through mpv, and show the current lyric line in an overlay."
 requires-python = ">=3.11"
+license = "MIT"
 
 [tool.optionsconfig]
 # The settings schema lives in the package; build.py reads these paths to regenerate
