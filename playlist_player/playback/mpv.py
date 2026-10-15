@@ -91,8 +91,10 @@ class MpvPlayer:
         self._resume_at: float | None = None
         # True while the playlist is being rearranged; nothing is published meanwhile.
         self._reordering = False
-        # A fade-in waiting for playback to start, as its length in seconds; and a
-        # counter that a newer fade bumps so that an older one still running gives way.
+        # How long a resume takes to come up from silence (0 is no fade); the fade-in
+        # waiting for playback to start, as its length in seconds; and a counter that a
+        # newer fade bumps so that an older one still running gives way.
+        self._fade_len = 0.0
         self._fade_s: float | None = None
         self._fade_run = 0
         # The volume last set or reported. An mpv started later is started at it, so a
@@ -325,20 +327,40 @@ class MpvPlayer:
         self._volume = volume
         self._command("set_property", "volume", volume)
 
-    def fade_in(self, seconds: float) -> None:
-        if seconds <= 0:
-            return
+    def set_fade_in(self, seconds: float) -> None:
         with self._lock:
+            self._fade_len = max(0.0, float(seconds))
+            if self._fade_len == 0:
+                self._fade_run += 1  # a fade under way gives way
+                self._fade_s = None
+                with contextlib.suppress(MpvCommandError, PlaybackError):
+                    self._command("set_property", "volume-gain", 0.0)
+                return
+            if self._fade_s is not None:
+                self._fade_s = self._fade_len  # armed already: it takes the new length
+        self._inbox.put(_REFRESH)  # arms it at once if playback is paused
+
+    def _arm_fade(self) -> None:
+        """Playback is paused with a fade set: go silent, so the resume comes up from it.
+
+        Silent from now, so that however playback is resumed (the page, the media keys),
+        its first moment is already quiet. A fade still rising gives way: every resume
+        starts from silence.
+        """
+        with self._lock:
+            if self._fade_len <= 0 or self._fade_s is not None:
+                return
             try:
-                # Silent from now, so that however playback is started (the page, the
-                # media keys), its first moment is already quiet.
                 self._command("set_property", "volume-gain", _FADE_FLOOR_DB)
             except MpvCommandError as exc:
                 # An mpv older than 0.37 has no volume-gain. Play on without the fade.
                 print(f"playlist_player: no fade-in with this mpv: {exc}", file=sys.stderr)
+                self._fade_len = 0.0
                 return
+            except PlaybackError:
+                return  # mpv went away; the one that replaces it starts with no gain set
             self._fade_run += 1
-            self._fade_s = float(seconds)
+            self._fade_s = self._fade_len
 
     def _start_fade(self) -> None:
         """Playback has started with a fade-in waiting: run it."""
@@ -354,8 +376,8 @@ class MpvPlayer:
         """Raise the gain from silence to nothing over ``seconds`` of actual playback.
 
         The level rises evenly in amplitude, which is what a fade sounds like; in
-        decibels that is steep at first and gentle at the end. Time spent paused or
-        buffering does not count, so a fade that is interrupted carries on where it was.
+        decibels that is steep at first and gentle at the end. Time spent loading or
+        buffering does not count. A pause ends it: the pause arms a fresh fade instead.
         """
         played = 0.0
         last = time.monotonic()
@@ -367,10 +389,13 @@ class MpvPlayer:
             last = now
             share = min(1.0, played / seconds)
             gain = 0.0 if share >= 1 else max(_FADE_FLOOR_DB, 20 * math.log10(max(share, 1e-3)))
-            try:
-                self._command("set_property", "volume-gain", gain)
-            except (MpvCommandError, PlaybackError):
-                return  # mpv went away; the one that replaces it starts with no gain set
+            with self._lock:  # a pause arming a new fade meanwhile must keep its silence
+                if run != self._fade_run:
+                    return
+                try:
+                    self._command("set_property", "volume-gain", gain)
+                except (MpvCommandError, PlaybackError):
+                    return  # mpv went away; the one that replaces it starts with no gain set
             if share >= 1:
                 return
 
@@ -406,6 +431,8 @@ class MpvPlayer:
             self._restart_available = True  # mpv is evidently healthy again
             if self._fade_s is not None:
                 self._start_fade()
+        elif state.status is PlayerStatus.PAUSED:
+            self._arm_fade()
 
     def _state_loop(self) -> None:
         last_publish = time.monotonic()

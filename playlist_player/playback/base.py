@@ -56,11 +56,13 @@ class Player(Protocol):
         """0 to 100."""
         ...
 
-    def fade_in(self, seconds: float) -> None:
-        """Bring the sound up from silence over ``seconds`` the next time playback starts.
+    def set_fade_in(self, seconds: float) -> None:
+        """Bring the sound up from silence over ``seconds`` each time playback resumes.
 
-        The volume itself is not touched: it stays what the listener set it to, and
-        reads that way throughout. Where the player cannot do this, nothing happens.
+        It holds until set again; 0 turns it off. Every pause, the one a song is
+        loaded in included, makes the next play come up gently. The volume itself is
+        not touched: it stays what the listener set it to, and reads that way
+        throughout. Where the player cannot do this, nothing happens.
         """
         ...
 
