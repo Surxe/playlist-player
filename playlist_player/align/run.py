@@ -3,6 +3,10 @@
 A track is aligned when it has synced lyrics and audio. Its ``words.json`` records what
 it was made from (the lyric text, the audio file, the engine), and a track whose record
 still matches is skipped, so the command can be stopped and run again.
+
+It also records how much of the audio has a voice in it (``voice_share``). Audio with
+too little is reported as having no singing; the next ``sync`` replaces it with another
+version (see the audio stage).
 """
 
 from __future__ import annotations
@@ -16,9 +20,10 @@ from ..cache import CacheStore, assets
 from ..errors import PlaylistPlayerError
 from ..lyrics import parse_lrc
 from ..models import LyricsKind
-from .plan import WordSpan, settle, spell, windows
+from .plan import WordSpan, settle, spell, voice_share, windows
 
-VERSION = 1
+# 2: records voice_share.
+VERSION = 2
 
 
 class Engine(Protocol):
@@ -79,16 +84,21 @@ def align_track(
     except PlaylistPlayerError as exc:
         return AlignReport(track_id, "failed", str(exc))
     words = settle(found, loudness)
+    share = voice_share(loudness)
     store.write_json(
         store.words_json(track_id),
         {
             **made_from,
+            "voice_share": round(share, 3),
             "lines": [None if line is None else [list(w) for w in line] for line in words],
         },
     )
     return AlignReport(
         track_id,
         "aligned",
+        "no singing heard; sync will look for another version"
+        if share < assets.NO_VOICE_SHARE and not status.audio.pinned
+        else "",
         lines=sum(1 for line in spelled if line),
         placed=sum(1 for line in words if line),
     )

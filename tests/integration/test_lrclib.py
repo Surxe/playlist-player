@@ -183,6 +183,21 @@ def test_lyrics_chosen_before_audio_existed_are_chosen_again(fake_server, store,
     assert not stage.is_done(TRACK)
 
 
+def test_lyrics_chosen_against_audio_since_replaced_are_chosen_again(fake_server, store, stage):
+    store.write_bytes(store.track_file(TRACK.id, "audio.opus"), b"not really audio")
+    assets.write_audio(
+        store, TRACK.id, assets.AudioAsset(file="audio.opus", duration_s=184.2, source="test")
+    )
+    fake_server.route("GET", "/api/get", (200, api_record(2, 184)))
+    stage.run(TRACK)
+    assert stage.is_done(TRACK)
+
+    assets.write_audio(
+        store, TRACK.id, assets.AudioAsset(file="audio.opus", duration_s=181.0, source="test")
+    )
+    assert not stage.is_done(TRACK)
+
+
 def test_requests_are_spaced_out_across_callers(fake_server):
     now = [100.0]
     waits = []

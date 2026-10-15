@@ -148,6 +148,45 @@ def with_words(
     return tuple(merged)
 
 
+# ---------------------------------- voice ---------------------------------- #
+
+# Audio in which a voice is heard for less than this share of the track has no singing
+# worth the name: a karaoke backing or an instrumental. Measured over the cache: such
+# uploads come out under 0.1, songs with vocals over 0.4.
+NO_VOICE_SHARE = 0.15
+
+
+def voice_share(store: CacheStore, track_id: str) -> float | None:
+    """How much of the track's audio has a voice in it, as ``align`` heard it, or ``None``.
+
+    ``words.json`` is removed whenever the audio changes, so a share read from it is
+    always about the file that is there now.
+    """
+    data = store.read_json(store.words_json(track_id), default=None)
+    share = data.get("voice_share") if isinstance(data, dict) else None
+    if isinstance(share, bool) or not isinstance(share, int | float):
+        return None
+    return float(share)
+
+
+def rejected_audio(store: CacheStore, track_id: str) -> list[dict]:
+    """Audio once downloaded for the track and found to have no singing, oldest first."""
+    data = store.read_json(store.rejected_audio_json(track_id), default=None)
+    return [entry for entry in data if isinstance(entry, dict)] if isinstance(data, list) else []
+
+
+def reject_audio(store: CacheStore, track_id: str, asset: AudioAsset, share: float) -> None:
+    """Record that ``asset`` has no singing, so the audio stage looks for another version."""
+    entry = {
+        "source_id": asset.source_id,
+        "url": asset.url,
+        "title": asset.title,
+        "channel": asset.channel,
+        "voice_share": round(share, 3),
+    }
+    store.write_json(store.rejected_audio_json(track_id), [*rejected_audio(store, track_id), entry])
+
+
 # ---------------------------------- state ---------------------------------- #
 
 

@@ -185,3 +185,44 @@ def test_summary_lists_what_a_person_needs_to_pin_by_hand():
     assert summary["url"] == "https://video.invalid/watch?v=x" and summary["duration_s"] == 204
     assert summary["reasons"] == ["duration +4s", "labelled live"]
     assert summary["score"] == pytest.approx(30 + 30 + 15 - 60)
+
+
+@pytest.mark.parametrize(
+    "credit",
+    ["Originally Performed By", "Made Famous by", "made popular by", "In the Style of",
+     "as performed by", "originally by"],
+)  # fmt: skip
+def test_a_karaoke_credit_drops_a_candidate_and_earns_no_artist_points(credit):
+    upload = candidate(
+        "k", 200, title=f"Invented Song 0 ({credit} Made Up Artist 0)", channel="Sing Along - Topic"
+    )
+    result = score(upload)
+    # The artist is named only as the song's original performer: no artist points.
+    assert result.score == 40 + 30 + 25 - 60 and not result.acceptable
+    assert "no artist name" in result.reasons
+    assert f"labelled {credit.lower()}" in result.reasons
+
+
+def test_a_karaoke_channel_drops_a_candidate_whose_title_looks_like_the_song():
+    upload = candidate("k", 200, title="Invented Song 0", channel="Hit The Karaoke Button - Topic")
+    result = score(upload)
+    assert result.score == 40 + 30 + 25 - 60 and "labelled karaoke" in result.reasons
+    credit = candidate("c", 200, title="Invented Song 0", channel="Made famous by Made Up Artist 0")
+    assert not score(credit).acceptable and "no artist name" in score(credit).reasons
+
+
+def test_only_karaoke_words_mark_a_channel_and_a_credit_in_the_track_title_is_not_penalized():
+    live_channel = candidate(
+        "l", 200, title="Invented Song 0", channel="Live Nation Acoustic Covers"
+    )
+    assert score(live_channel).score == 70
+    tribute = Track(id="T4", title="Invented Song 0 (Made Famous by Someone)",
+                    artists=("Made Up Artist 0",), duration_ms=200_000)  # fmt: skip
+    same = candidate("t", 200, title="Made Up Artist 0 - Invented Song 0 (Made Famous by Someone)")
+    assert score(same, tribute).score == 85
+
+
+@pytest.mark.parametrize("label", ["TV Mix", "Backing Track", "Off Vocal"])
+def test_backing_track_labels_drop_a_candidate(label):
+    result = score(candidate("x", 200, title=f"Made Up Artist 0 - Invented Song 0 ({label})"))
+    assert result.score == 85 - 60 and f"labelled {label.lower()}" in result.reasons

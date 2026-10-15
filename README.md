@@ -91,6 +91,20 @@ retried by the next `sync`. When downloads start failing, update yt-dlp first:
 .venv/bin/pip install -U yt-dlp
 ```
 
+The audio search wants the album recording. A candidate labelled as another version is
+held below the line for downloading by itself: live, remix, cover, karaoke, instrumental,
+TV mix, backing track and the like in its title, a karaoke or instrumentals channel, or a
+credit such as "originally performed by" or "made famous by" (a name after such a credit
+does not count as the artist's). A label the Spotify title carries itself is not held
+against it.
+
+Karaoke uploads are not always labelled, so `align` (see Word timing) also measures how
+much of each track's audio has a voice in it. When a track with synced lyrics turns out
+to have next to no singing, `align` says so, and the next `sync` replaces the audio with
+the best candidate not yet tried; what was rejected is listed in the track's
+`rejected_audio.json`. After three such versions, or when no other version is left, the
+audio it has is kept. A pinned track's audio is never replaced this way.
+
 A track whose audio search finds nothing trustworthy is flagged `review` in `status`,
 with its best candidates listed in `cache/misses.json`. Choose one by hand, then sync
 that track again:
@@ -129,6 +143,11 @@ buried voice, usually) is left out and keeps the estimate, so one song can have 
 track's offset does not move them, though a large change of offset moves where lines are
 looked for and the track is aligned again on the next run. New audio for a track (a pin)
 discards its word times. About five seconds a track on a recent GPU.
+
+It also records the share of the track in which a voice is heard (`voice_share` in
+`words.json`). Under 0.15 the audio is taken to have no singing, a karaoke backing or an
+instrumental under the song's name, and `align` prints "no singing heard"; see Syncing a
+playlist for what `sync` does about it. Songs with vocals measure about 0.4 and up.
 
 ## Playing
 
