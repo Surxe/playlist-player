@@ -267,6 +267,8 @@ def test_status_reports_the_synced_playlist_without_lyric_text(world, store, mon
     )
     world.run(audio)
     assets.write_track_state(store, "TRK0000", assets.TrackState(offset_ms=-150))
+    # The miss log is shared by every playlist: another playlist's review is not this one's.
+    MissLog(store).record("ElsewhereTrack", "audio", "needs_review", detail=[])
     monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
     monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
 
