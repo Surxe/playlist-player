@@ -11,6 +11,12 @@ one can be chosen by hand with the ``pin`` command.
 With a pin (``audio_pin`` in the track's state file): download exactly that URL. No
 scoring and no duration check; the person who pinned it has decided.
 
+Audio that ``align`` found to have no singing in it (a karaoke backing or an instrumental
+under a song's name, see ``assets.voice_share``) is not done: it is listed in
+``rejected_audio.json``, and the next best candidate that is not on that list replaces
+it. Only so many are tried, since a song that is instrumental in every version would
+otherwise use up its candidates one run at a time. A pinned file is never replaced.
+
 The downloaded stream is measured, then copied (never re-encoded) into a container that
 carries title and artist tags, and only then moved to its final name.
 """
@@ -31,6 +37,8 @@ _SEARCH_LIMIT = 10
 # How many acceptable candidates to try when a download fails (removed, region-locked).
 _MAX_DOWNLOAD_ATTEMPTS = 3
 _REVIEW_LISTING = 3
+# Versions of one track found to have no singing before the stage stops looking.
+_MAX_REJECTED = 3
 
 
 class AudioStage:
@@ -54,8 +62,20 @@ class AudioStage:
         if asset is None:
             return False
         pin = assets.read_track_state(self._store, track.id).audio_pin
-        # A pin added or changed after the download means the file on disk is the wrong one.
-        return pin is None or (asset.pinned and asset.url == pin)
+        if pin is not None:
+            # A pin added or changed after the download means the file on disk is the wrong one.
+            return asset.pinned and asset.url == pin
+        return not self._voiceless(track.id, asset)
+
+    def _voiceless(self, track_id: str, asset: AudioAsset) -> bool:
+        """Whether the audio has no singing and another version should still be looked for."""
+        share = assets.voice_share(self._store, track_id)
+        if asset.pinned or share is None or share >= assets.NO_VOICE_SHARE:
+            return False
+        rejected = assets.rejected_audio(self._store, track_id)
+        if asset.source_id in {entry.get("source_id") for entry in rejected}:
+            return False  # already looked for another version, and kept this one
+        return len(rejected) < _MAX_REJECTED
 
     def run(self, track: Track) -> StageResult:
         pin = assets.read_track_state(self._store, track.id).audio_pin
@@ -63,7 +83,15 @@ class AudioStage:
             asset = self._fetch(track, pin, score=None, pinned=True)
             return StageResult.done(f"pinned, {asset.duration_s:.0f}s")
 
-        ranked = self._candidates(track)
+        current = assets.read_audio(self._store, track.id)
+        if current is not None and self._voiceless(track.id, current):
+            share = assets.voice_share(self._store, track.id) or 0.0
+            assets.reject_audio(self._store, track.id, current, share)
+        rejected = {
+            entry.get("source_id") for entry in assets.rejected_audio(self._store, track.id)
+        }
+
+        ranked = [item for item in self._candidates(track) if item.candidate.id not in rejected]
         acceptable = [item for item in ranked if item.acceptable]
         if not acceptable:
             listing = [item.summary() for item in ranked[:_REVIEW_LISTING]]

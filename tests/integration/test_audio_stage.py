@@ -176,6 +176,75 @@ def test_audio_fetched_before_a_pin_was_set_is_not_done(store, tones):
     assert not stage.is_done(TRACK)
 
 
+def heard(store, share: float) -> None:
+    """What ``align`` leaves for the audio now on disk, reduced to its voice share."""
+    store.write_json(store.words_json(TRACK.id), {"voice_share": share, "lines": []})
+
+
+def test_audio_with_no_singing_is_replaced_by_the_next_best_version(store, tones):
+    found = [[candidate("karaoke", 5, channel=TOPIC), candidate("video", 5)]]
+    stage = stage_for(store, FakeAudioSource(tones, found))
+    stage.run(TRACK)
+    assert stage.is_done(TRACK)
+
+    heard(store, 0.02)
+    assert not stage.is_done(TRACK)
+    source = FakeAudioSource(tones, found)
+    result = stage_for(store, source).run(TRACK)
+
+    assert result.outcome is Outcome.DONE and source.downloads == [
+        "https://video.invalid/watch?v=video"
+    ]
+    assert assets.read_audio(store, TRACK.id).source_id == "video"
+    (rejected,) = assets.rejected_audio(store, TRACK.id)
+    assert (rejected["source_id"], rejected["voice_share"]) == ("karaoke", 0.02)
+    assert stage.is_done(TRACK)  # the new audio has not been listened to yet
+
+
+def test_audio_with_singing_or_not_yet_listened_to_is_kept(store, tones):
+    stage = stage_for(store, FakeAudioSource(tones, [[candidate("album", 5, channel=TOPIC)]]))
+    stage.run(TRACK)
+    heard(store, 0.6)
+    assert stage.is_done(TRACK)
+    store.remove(store.words_json(TRACK.id))
+    assert stage.is_done(TRACK)
+
+
+def test_with_no_other_version_the_audio_without_singing_is_kept_and_not_retried(store, tones):
+    found = [[candidate("karaoke", 5, channel=TOPIC)]]
+    stage = stage_for(store, FakeAudioSource(tones, found))
+    stage.run(TRACK)
+    heard(store, 0.0)
+
+    result = stage_for(store, FakeAudioSource(tones, found)).run(TRACK)
+
+    assert result.outcome is Outcome.MISS
+    assert assets.read_audio(store, TRACK.id).source_id == "karaoke"  # still playable
+    assert stage.is_done(TRACK)
+
+
+def test_a_pinned_file_is_kept_even_with_no_singing(store, tones):
+    pin = "https://video.invalid/watch?v=chosen"
+    assets.write_track_state(store, TRACK.id, TrackState(audio_pin=pin))
+    stage = stage_for(store, FakeAudioSource(tones, []))
+    stage.run(TRACK)
+    heard(store, 0.0)
+    assert stage.is_done(TRACK)
+
+
+def test_only_so_many_versions_without_singing_are_tried(store, tones):
+    ids = ["v1", "v2", "v3", "v4"]
+    found = [[candidate(cid, 5) for cid in ids]]
+    for _ in ids:
+        stage = stage_for(store, FakeAudioSource(tones, found))
+        if not stage.is_done(TRACK):
+            stage.run(TRACK)
+            heard(store, 0.0)
+    assert [e["source_id"] for e in assets.rejected_audio(store, TRACK.id)] == ["v1", "v2", "v3"]
+    assert assets.read_audio(store, TRACK.id).source_id == "v4"
+    assert stage.is_done(TRACK)
+
+
 def test_a_stale_work_directory_from_a_killed_run_is_swept(store, tones):
     stale = store.track_dir(TRACK.id) / ".work.killed"
     stale.mkdir(parents=True)

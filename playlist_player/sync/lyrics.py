@@ -8,7 +8,8 @@ Goal: synced lyrics on disk. Order of attempts:
 
 The reference duration is the downloaded audio's measured length when there is audio,
 because that is what the overlay will be timed against; Spotify's figure is the
-fallback. Lyrics chosen against Spotify's figure are chosen again once audio exists.
+fallback. Lyrics chosen against Spotify's figure, or against audio that has since been
+replaced, are chosen again against the audio there now.
 
 Anything short of synced lyrics (plain text, an instrumental marker, nothing at all) is
 saved for what it is and reported as a miss, so the search is repeated after the retry
@@ -40,9 +41,12 @@ class LyricsStage:
         info = assets.read_lyrics_info(self._store, track.id)
         if info is None or info.kind is not LyricsKind.SYNCED:
             return False
-        # Chosen before there was audio: choose again now that the real length is known.
-        has_audio = assets.read_audio(self._store, track.id) is not None
-        return info.reference == "audio" or not has_audio
+        audio = assets.read_audio(self._store, track.id)
+        if audio is None:
+            return True
+        # Chosen before there was audio, or against audio since replaced (one found to have
+        # no singing, say): choose again against the length of the file there now.
+        return info.reference == "audio" and info.reference_duration_s == round(audio.duration_s, 3)
 
     def run(self, track: Track) -> StageResult:
         audio = assets.read_audio(self._store, track.id)

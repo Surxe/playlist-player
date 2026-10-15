@@ -149,6 +149,9 @@ class CacheStore:
     def words_json(self, track_id: str) -> Path:
         return self.track_dir(track_id) / "words.json"
 
+    def rejected_audio_json(self, track_id: str) -> Path:
+        return self.track_dir(track_id) / "rejected_audio.json"
+
     def track_cover(self, track_id: str) -> Path:
         return self.track_dir(track_id) / "cover.jpg"
 

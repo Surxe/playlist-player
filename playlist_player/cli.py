@@ -180,7 +180,11 @@ def _cmd_align(args: argparse.Namespace, settings: Settings) -> int:
 
     def said(report) -> None:
         if report.outcome == "aligned":
-            print(f"  {report.track_id}  {report.placed}/{report.lines} lines placed", flush=True)
+            note = f"; {report.detail}" if report.detail else ""
+            print(
+                f"  {report.track_id}  {report.placed}/{report.lines} lines placed{note}",
+                flush=True,
+            )
         elif report.outcome == "failed":
             print(f"  {report.track_id}  FAILED: {report.detail}", file=sys.stderr, flush=True)
 

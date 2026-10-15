@@ -9,6 +9,7 @@ import pytest
 
 from playlist_player.align import MIN_CONFIDENCE, WordSpan, align_tracks, settle, spell, summary
 from playlist_player.align import windows as line_windows
+from playlist_player.align.plan import AUDIBLE_VOICE, voice_share
 from playlist_player.cache import assets
 from playlist_player.errors import PlaylistPlayerError
 from playlist_player.lyrics import parse_lrc
@@ -79,6 +80,7 @@ class FakeEngine:
 
     name = "fake"
     built = 0
+    level = 0.0  # the voice's level in every frame
 
     def __init__(self) -> None:
         type(self).built += 1
@@ -97,7 +99,7 @@ class FakeEngine:
             found.append(
                 [WordSpan(start + 50 * k, start + 50 * k + 5, 0.9) for k in range(len(words))]
             )
-        return found, [0.0] * 1000
+        return found, [self.level] * 1000
 
 
 @pytest.fixture
@@ -178,3 +180,21 @@ def test_a_line_keeps_its_word_times_through_json():
     line = LyricLine(1000, "two words", ((1000, 1400), (1400, 2000)))
     assert LyricLine.from_dict(line.to_dict()) == line
     assert LyricLine.from_dict({"t_ms": 5, "text": "x"}) == LyricLine(5, "x")
+
+
+def test_voice_share_counts_the_frames_a_voice_is_heard_in():
+    assert voice_share([]) == 0.0
+    assert voice_share([0.0, AUDIBLE_VOICE, 0.5, AUDIBLE_VOICE / 2]) == 0.5
+
+
+def test_an_aligned_track_records_how_much_of_it_has_a_voice(library):
+    FakeEngine.level = 1.0
+    try:
+        (sung,) = run(library, [track_id(0)])
+    finally:
+        FakeEngine.level = 0.0
+    assert assets.voice_share(library, track_id(0)) == 1.0 and sung.detail == ""
+
+    (silent,) = run(library, [track_id(1)])
+    assert assets.voice_share(library, track_id(1)) == 0.0
+    assert silent.outcome == "aligned" and "no singing heard" in silent.detail

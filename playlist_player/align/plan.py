@@ -9,6 +9,8 @@ inside a window.
 * :func:`windows` says which stretch of audio each line is looked for in.
 * :func:`settle` turns what the engine found into word times, or into nothing for a line
   it was not sure of. Such a line keeps the estimate of ``lyrics/words.py``.
+* :func:`voice_share` says how much of the track has a voice in it at all, which tells a
+  karaoke or instrumental upload from the song.
 
 Times are counted in the model's frames (``FRAME_MS`` each) until :func:`settle`, and in
 milliseconds of the audio file after it.
@@ -37,6 +39,11 @@ MIN_CONFIDENCE = 0.2
 # The last word of a line is held for as long as the voice stays this loud, as a share
 # of the track's loud singing (see :func:`settle`).
 QUIET_SHARE = 0.1
+# A frame in which the separated voice is at least this loud counts as singing. The voice
+# is on the scale of the mix, which the engine brings to unit level, so this is a share
+# of the whole track's level; what a separator lets through of a karaoke backing stays
+# far below it.
+AUDIBLE_VOICE = 0.1
 # The token that stands for "some sound": a word with no letter the model knows.
 ANY = "*"
 
@@ -124,6 +131,13 @@ def settle(
             tuple((a * FRAME_MS, max(a, b) * FRAME_MS) for a, b in zip(starts, ends, strict=True))
         )
     return settled
+
+
+def voice_share(loudness: Sequence[float]) -> float:
+    """The share of the track's frames in which a voice is heard (:data:`AUDIBLE_VOICE`)."""
+    if not loudness:
+        return 0.0
+    return sum(1 for level in loudness if level >= AUDIBLE_VOICE) / len(loudness)
 
 
 def _loud(loudness: Sequence[float]) -> float:

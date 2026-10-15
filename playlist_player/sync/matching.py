@@ -96,8 +96,17 @@ AUDIO_REVIEW_THRESHOLD = 60.0
 # audio, so it is neutral.
 _OTHER_VERSION_WORDS = (
     "live", "remix", "cover", "karaoke", "instrumental", "sped up", "slowed", "nightcore",
-    "8d", "reverb", "acoustic", "reaction",
+    "8d", "reverb", "acoustic", "reaction", "tv mix", "backing track", "off vocal",
 )  # fmt: skip
+# How a karaoke or tribute recording credits the artist whose song it is. The artist's
+# name follows the phrase, so it says nothing about who is performing.
+_CREDIT_PHRASES = (
+    "originally performed by", "made famous by", "made popular by", "in the style of",
+    "as performed by", "originally by",
+)  # fmt: skip
+# Words that mark a whole channel as another version's. Narrower than the title's list:
+# a channel called "Live Nation" or "Acoustic Records" publishes the real thing too.
+_OTHER_VERSION_CHANNEL_WORDS = ("karaoke", "instrumental", "instrumentals", "backing tracks")
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +138,27 @@ class ScoredCandidate:
 def _has_phrase(haystack: str, phrase: str) -> bool:
     """Whole-word containment over already folded text."""
     return bool(phrase) and f" {phrase} " in f" {haystack} "
+
+
+def _before_credit(text: str) -> str:
+    """Folded text up to the first credit phrase: the part that names the performer."""
+    cut = min(
+        (
+            f" {text} ".find(f" {phrase} ")
+            for phrase in _CREDIT_PHRASES
+            if _has_phrase(text, phrase)
+        ),
+        default=len(text),
+    )
+    return text[:cut].strip()
+
+
+def _other_version_labels(title: str, channel: str, track_title: str) -> list[str]:
+    """What marks a candidate as not the album recording, ignoring what the track carries."""
+    labels = [w for w in _OTHER_VERSION_WORDS + _CREDIT_PHRASES if _has_phrase(title, w)]
+    labels += [w for w in _CREDIT_PHRASES if _has_phrase(channel, w)]
+    labels += [w for w in _OTHER_VERSION_CHANNEL_WORDS if _has_phrase(channel, w)]
+    return [w for w in dict.fromkeys(labels) if not _has_phrase(track_title, w)]
 
 
 def is_album_audio(candidate: AudioCandidate) -> bool:
@@ -171,7 +201,12 @@ def score_audio(
         score += _TITLE_ABSENT
         reasons.append("title differs")
 
-    if any(_has_phrase(title, a) or _has_phrase(channel, a) for a in map(_fold, track.artists)):
+    # A name after "made famous by" credits the song's artist, not the one performing it.
+    performer_title, performer_channel = _before_credit(title), _before_credit(channel)
+    if any(
+        _has_phrase(performer_title, a) or _has_phrase(performer_channel, a)
+        for a in map(_fold, track.artists)
+    ):
         score += _ARTIST_POINTS
     else:
         reasons.append("no artist name")
@@ -185,11 +220,7 @@ def score_audio(
         score += _AUDIO_LABEL_POINTS
         reasons.append("audio upload")
 
-    labels = [
-        word
-        for word in _OTHER_VERSION_WORDS
-        if _has_phrase(title, word) and not _has_phrase(track_title, word)
-    ]
+    labels = _other_version_labels(title, channel, track_title)
     if labels:
         score += _OTHER_VERSION
         reasons.append("labelled " + ", ".join(labels))
