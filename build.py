@@ -1,6 +1,6 @@
 """Regenerate the docs that are derived from the settings schema.
 
-Run from the repo root after editing ``playlist_player/options_schema.py``::
+Run from the repo root after editing ``spotifixed/options_schema.py``::
 
     .venv/bin/python build.py
 

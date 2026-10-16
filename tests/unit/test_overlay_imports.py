@@ -12,10 +12,10 @@ import ast
 import subprocess
 import sys
 
-import playlist_player
-from playlist_player.config import REPO_ROOT
+import spotifixed
+from spotifixed.config import REPO_ROOT
 
-PACKAGE = __import__("pathlib").Path(playlist_player.__file__).parent
+PACKAGE = __import__("pathlib").Path(spotifixed.__file__).parent
 GTK_MODULE = PACKAGE / "overlay" / "render" / "gtk_layer.py"
 
 
@@ -58,12 +58,12 @@ def test_the_entry_module_loads_the_layer_shell_library_before_any_package_impor
 def test_nothing_but_the_renderer_pulls_gi_into_the_process():
     code = (
         "import sys\n"
-        "import playlist_player.cli\n"
-        "import playlist_player.overlay.main\n"
-        "import playlist_player.overlay.client\n"
-        "import playlist_player.overlay.presenter\n"
-        "import playlist_player.overlay.render.base\n"
-        "import playlist_player.server.app\n"
+        "import spotifixed.cli\n"
+        "import spotifixed.overlay.main\n"
+        "import spotifixed.overlay.client\n"
+        "import spotifixed.overlay.presenter\n"
+        "import spotifixed.overlay.render.base\n"
+        "import spotifixed.server.app\n"
         "print('gi' in sys.modules)\n"
     )
     result = subprocess.run(

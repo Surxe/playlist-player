@@ -6,9 +6,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from playlist_player.config import REPO_ROOT
-from playlist_player.errors import SourceError
-from playlist_player.sources.audio import AudioCandidate, DownloadedAudio
+from spotifixed.config import REPO_ROOT
+from spotifixed.errors import SourceError
+from spotifixed.sources.audio import AudioCandidate, DownloadedAudio
 
 MAKE_TONE = REPO_ROOT / "scripts" / "make-test-audio.sh"
 _made: dict[tuple[float, str], Path] = {}

@@ -105,10 +105,10 @@ class PlaybackSession:
         try:
             stored = self._store.read_json(self._store.session_json, {})
         except (CacheError, OSError) as exc:
-            print(f"playlist_player: {exc}; starting without the saved session", file=sys.stderr)
+            print(f"spotifixed: {exc}; starting without the saved session", file=sys.stderr)
         if not isinstance(stored, dict):
             print(
-                "playlist_player: the saved session is not an object; ignoring it",
+                "spotifixed: the saved session is not an object; ignoring it",
                 file=sys.stderr,
             )
             stored = {}
@@ -125,7 +125,7 @@ class PlaybackSession:
         try:
             self._store.write_json(self._store.session_json, self._data)
         except (CacheError, OSError) as exc:
-            print(f"playlist_player: could not save the session: {exc}", file=sys.stderr)
+            print(f"spotifixed: could not save the session: {exc}", file=sys.stderr)
 
     def document(self) -> dict[str, Any]:
         """What the page reads of the session."""
@@ -196,7 +196,7 @@ class PlaybackSession:
                 try:
                     self._apply(playing)
                 except (NotInCacheError, CacheError, PlaybackError) as exc:
-                    print(f"playlist_player: the queue is as it was: {exc}", file=sys.stderr)
+                    print(f"spotifixed: the queue is as it was: {exc}", file=sys.stderr)
         return self.document()
 
     # --------------------------------- order -------------------------------- #
@@ -364,7 +364,7 @@ class PlaybackSession:
                 position = self._resume_position(saved, track_id)
                 self._player.load_queue(queue, paused=True, position_s=position)
             except (NotInCacheError, CacheError, PlaybackError) as exc:
-                print(f"playlist_player: not resuming the last song: {exc}", file=sys.stderr)
+                print(f"spotifixed: not resuming the last song: {exc}", file=sys.stderr)
         with self._lock:
             fade_in_s = self._fade_in_s()
             mono = self._player_switch_on("mono")
@@ -378,13 +378,13 @@ class PlaybackSession:
         try:
             self._player.set_fade_in(seconds)
         except PlaybackError as exc:
-            print(f"playlist_player: no fade-in this time: {exc}", file=sys.stderr)
+            print(f"spotifixed: no fade-in this time: {exc}", file=sys.stderr)
 
     def _set_mono(self, on: bool) -> None:
         try:
             self._player.set_mono(on)
         except PlaybackError as exc:
-            print(f"playlist_player: the mono setting is not in force: {exc}", file=sys.stderr)
+            print(f"spotifixed: the mono setting is not in force: {exc}", file=sys.stderr)
 
     def _resume_position(self, saved: dict[str, Any], track_id: str) -> float | None:
         position = _number(saved.get("position_s"))

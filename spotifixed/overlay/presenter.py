@@ -88,7 +88,7 @@ def present(
 ) -> OverlayView:
     """The view for this instant. ``times`` are the timestamps of ``lines``.
 
-    ``ends`` are the lines' word endings (:func:`~playlist_player.lyrics.word_ends`);
+    ``ends`` are the lines' word endings (:func:`~spotifixed.lyrics.word_ends`);
     given, the word being sung is underlined, and left out, no word is. A line that
     carries aligned word times uses those; any other line uses the estimate in ``ends``.
     """

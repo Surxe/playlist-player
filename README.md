@@ -1,4 +1,4 @@
-# playlist-player
+# spotifixed
 
 Cache a Spotify playlist's audio and time-synced lyrics, play it through mpv, and show
 the current lyric line in an overlay above a fullscreen application.
@@ -12,7 +12,7 @@ layer-shell protocol (KDE Plasma, Sway and other wlroots compositors; not GNOME)
 
 ## What it is and is not
 
-playlist-player is a personal-use tool. It downloads a playlist's audio, lyrics and
+spotifixed is a personal-use tool. It downloads a playlist's audio, lyrics and
 cover art into a local cache for the one person who runs it, plays them back locally
 through mpv, and shows the current lyric line in an overlay. Nothing is re-encoded,
 re-uploaded, shared or redistributed; the daemon listens on loopback only, and no
@@ -25,7 +25,7 @@ cover art `sync` can fetch are third-party works that stay under their owners' r
 and the terms of the services they come from.
 
 `sync` reads a playlist's track list from a paid Apify Actor, its lyrics from LRCLIB,
-and its audio through yt-dlp. Use playlist-player only for content you are allowed to
+and its audio through yt-dlp. Use spotifixed only for content you are allowed to
 keep for personal playback, and follow the terms of the services you use it with.
 
 ## How it fits together
@@ -68,7 +68,7 @@ cannot install; leave it off if you do not want the overlay. yt-dlp is installed
 virtualenv, not from a distribution package, because it has to be updated whenever
 YouTube changes. Having `deno` or `node` on the PATH makes its extraction more reliable.
 
-Run commands as `.venv/bin/python -m playlist_player <command>` from the repo. Only
+Run commands as `.venv/bin/python -m spotifixed <command>` from the repo. Only
 `sync` needs the virtualenv at all: `serve`, `ctl` and `overlay` use nothing but the
 standard library (and, for the overlay, the system GTK bindings), so they also run with
 the system `python3`.
@@ -88,11 +88,11 @@ of 2 means the source returned fewer tracks than the playlist holds.
 ## Syncing a playlist
 
 ```bash
-.venv/bin/python -m playlist_player sync <playlist-url>     # everything, resumable
-.venv/bin/python -m playlist_player sync <id> --limit 10    # the first ten tracks
-.venv/bin/python -m playlist_player sync <id> --only lyrics # one stage: tracklist, audio, lyrics or cover
-.venv/bin/python -m playlist_player sync <id> --dry-run     # what would be fetched
-.venv/bin/python -m playlist_player status <id>             # per-track table and totals
+.venv/bin/python -m spotifixed sync <playlist-url>     # everything, resumable
+.venv/bin/python -m spotifixed sync <id> --limit 10    # the first ten tracks
+.venv/bin/python -m spotifixed sync <id> --only lyrics # one stage: tracklist, audio, lyrics or cover
+.venv/bin/python -m spotifixed sync <id> --dry-run     # what would be fetched
+.venv/bin/python -m spotifixed status <id>             # per-track table and totals
 ```
 
 Per track, in this order: audio (yt-dlp), then lyrics (LRCLIB), then cover art. The
@@ -128,8 +128,8 @@ with its best candidates listed in `cache/misses.json`. Choose one by hand, then
 that track again:
 
 ```bash
-.venv/bin/python -m playlist_player pin <track-id> <url>    # or: pin <track-id> clear
-.venv/bin/python -m playlist_player sync <id> --track <track-id>
+.venv/bin/python -m spotifixed pin <track-id> <url>    # or: pin <track-id> clear
+.venv/bin/python -m spotifixed sync <id> --track <track-id>
 ```
 
 Audio is downloaded for personal, local playback and never redistributed; the boundary
@@ -144,9 +144,9 @@ replaces the estimate with what is heard in the audio:
 
 ```bash
 .venv/bin/pip install -r requirements-align.txt --extra-index-url https://download.pytorch.org/whl/cu128
-.venv/bin/python -m playlist_player align                 # every cached playlist, resumable
-.venv/bin/python -m playlist_player align <id> --limit 10 # the first ten tracks of one
-.venv/bin/python -m playlist_player align --track <id>    # one track; --force to do it again
+.venv/bin/python -m spotifixed align                 # every cached playlist, resumable
+.venv/bin/python -m spotifixed align <id> --limit 10 # the first ten tracks of one
+.venv/bin/python -m spotifixed align --track <id>    # one track; --force to do it again
 ```
 
 For each track with synced lyrics and audio it separates the voice from the music
@@ -171,11 +171,11 @@ playlist for what `sync` does about it. Songs with vocals measure about 0.4 and 
 ## Playing
 
 ```bash
-.venv/bin/python -m playlist_player start          # everything at once; see below
-.venv/bin/python -m playlist_player serve          # the daemon alone; then open http://127.0.0.1:8765/
-.venv/bin/python -m playlist_player ctl toggle     # also: play, pause, next, prev, stop
-.venv/bin/python -m playlist_player ctl seek +10   # relative with a sign, absolute without
-.venv/bin/python -m playlist_player ctl volume 70
+.venv/bin/python -m spotifixed start          # everything at once; see below
+.venv/bin/python -m spotifixed serve          # the daemon alone; then open http://127.0.0.1:8765/
+.venv/bin/python -m spotifixed ctl toggle     # also: play, pause, next, prev, stop
+.venv/bin/python -m spotifixed ctl seek +10   # relative with a sign, absolute without
+.venv/bin/python -m spotifixed ctl volume 70
 ```
 
 `start` is the one command for everyday use. It runs the daemon, starts the overlay
@@ -187,7 +187,7 @@ layer-shell, no display) that is said once and the rest carries on. The overlay 
 be switched off and on from the page (see The overlay), and `start` stops or starts it to
 match. `--no-overlay` and `--no-browser` leave either part out; with `--no-overlay` the
 page cannot switch the overlay on. To put it behind a desktop launcher, have the
-launcher open a terminal running `start`; `playlist_player/server/static/icon.svg` is
+launcher open a terminal running `start`; `spotifixed/server/static/icon.svg` is
 the icon the page uses and serves as the launcher's too.
 
 `serve` starts mpv and owns it. The page is a remote control, not a player: sound comes
@@ -223,7 +223,7 @@ It does not begin playing by itself. A song saved at its very end starts from th
 
 **Fade in** (under **Settings** on the page) makes the music fade in each time it is
 resumed after a pause, over the number of seconds you set, instead of coming on at full
-volume; 0, the default, turns it off. That includes the first play after playlist-player
+volume; 0, the default, turns it off. That includes the first play after spotifixed
 starts, since the remembered song is put back paused; pausing part-way through a fade
 starts the next one from silence. Skipping between songs while playing does not fade. A
 change applies at once. Your volume is not changed while it fades. It needs mpv 0.37 or
@@ -254,7 +254,7 @@ adjust it. Media keys and `ctl` go to the daemon, not the page, and work even wi
 page closed; `start --no-browser` is the lightest way to run.
 
 `ctl` exists so a desktop shortcut can pause from inside a fullscreen application. With
-`PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN` set to the plugin's path (Debian:
+`SPOTIFIXED_MPV_MPRIS_PLUGIN` set to the plugin's path (Debian:
 `/usr/lib/mpv-mpris/mpris.so`), the keyboard's media keys work too.
 
 The daemon listens on loopback only, refuses requests that do not name its own address
@@ -267,8 +267,8 @@ no scripts and no network access.
 ## The overlay
 
 ```bash
-.venv/bin/python -m playlist_player overlay          # follows the daemon; Ctrl-C to quit
-.venv/bin/python -m playlist_player overlay --demo   # a fixed line, for positioning
+.venv/bin/python -m spotifixed overlay          # follows the daemon; Ctrl-C to quit
+.venv/bin/python -m spotifixed overlay --demo   # a fixed line, for positioning
 ```
 
 The overlay shows the current lyric line on the compositor's overlay layer, the one
@@ -282,7 +282,7 @@ running. It is a client of the daemon's API and nothing more.
 hidden, so it takes no memory or processor time until it is switched on again; its
 settings are kept either way, and the choice is remembered for the next start. This works
 for the overlay that `start` runs. One started by hand (`overlay` beside `serve`) is not
-playlist-player's to close, so under `serve` or `start --no-overlay` the switch is greyed
+spotifixed's to close, so under `serve` or `start --no-overlay` the switch is greyed
 out. If the overlay stops by itself, the page says so, and switching it off and on tries
 again.
 
@@ -314,14 +314,14 @@ fullscreen.
 | `state/` | What you changed by hand: lyric offsets, audio pins, and overlay settings set from the page (with whether the overlay is switched on). Not rebuilt. |
 | `state/session.json` | Each shuffled playlist's order, and what the daemon resumes: the playlist, song, position and volume, with the settings made on the page (fade in, mono, which tracks are included). Rewritten as playback changes; deleting it just starts fresh. |
 
-Both are gitignored and sit in the repo by default; `PLAYLIST_PLAYER_CACHE_DIR` and
-`PLAYLIST_PLAYER_STATE_DIR` move them. Files get ordinary permissions, whatever your
+Both are gitignored and sit in the repo by default; `SPOTIFIXED_CACHE_DIR` and
+`SPOTIFIXED_STATE_DIR` move them. Files get ordinary permissions, whatever your
 umask allows.
 
 This repo ships no installer and does nothing about user accounts. To run the daemon
 and overlay from somewhere other than a working clone (as a different account than the
-one that syncs, say), copy the `playlist_player/` directory there, run it with the
-system `python3 -m playlist_player`, and point the two directory settings at the shared
+one that syncs, say), copy the `spotifixed/` directory there, run it with the
+system `python3 -m spotifixed`, and point the two directory settings at the shared
 cache. Sharing a cache between accounts is ordinary Unix: a group-owned, setgid
 directory and a umask of 002 for whoever writes to it.
 
@@ -357,11 +357,11 @@ deliberately not registered, so a token cannot end up on a command line.
 <!-- BEGIN_GENERATED_OPTIONS -->
 #### Storage
 
-* **PLAYLIST_PLAYER_CACHE_DIR** - Directory for everything fetched: tracklists, audio, lyrics, cover art. A relative path resolves against the repo root, not the working directory.
+* **SPOTIFIXED_CACHE_DIR** - Directory for everything fetched: tracklists, audio, lyrics, cover art. A relative path resolves against the repo root, not the working directory.
   - Default: `"cache"`
   - Command line: `--cache-dir`
 
-* **PLAYLIST_PLAYER_STATE_DIR** - Directory for hand-authored per-track values (timing offsets, audio pins). Kept apart from the cache so wiping the cache never loses a correction.
+* **SPOTIFIXED_STATE_DIR** - Directory for hand-authored per-track values (timing offsets, audio pins). Kept apart from the cache so wiping the cache never loses a correction.
   - Default: `"state"`
   - Command line: `--state-dir`
 
@@ -372,120 +372,120 @@ deliberately not registered, so a token cannot end up on a command line.
   - Default: None
   - Command line: `--apify-token`
 
-* **PLAYLIST_PLAYER_TRACKLIST_ACTOR** - Apify Actor that returns a playlist's tracks, as user~name. The response shape is Actor-specific, so a new Actor also needs a parser.
+* **SPOTIFIXED_TRACKLIST_ACTOR** - Apify Actor that returns a playlist's tracks, as user~name. The response shape is Actor-specific, so a new Actor also needs a parser.
   - Default: `"s-r~free-spotify-playlist-intelligence"`
   - Command line: `--tracklist-actor`
 
-* **PLAYLIST_PLAYER_APIFY_MAX_CHARGE_USD** - Charge cap sent with each Actor run, in US dollars.
+* **SPOTIFIXED_APIFY_MAX_CHARGE_USD** - Charge cap sent with each Actor run, in US dollars.
   - Default: `"0.05"`
   - Command line: `--apify-max-charge-usd`
 
-* **PLAYLIST_PLAYER_APIFY_BASE_URL** - Apify API origin. Tests point this at a local stub.
+* **SPOTIFIXED_APIFY_BASE_URL** - Apify API origin. Tests point this at a local stub.
   - Default: `"https://api.apify.com"`
   - Command line: `--apify-base-url`
 
 
 #### Sync
 
-* **PLAYLIST_PLAYER_LRCLIB_BASE_URL** - LRCLIB origin, the lyrics source.
+* **SPOTIFIXED_LRCLIB_BASE_URL** - LRCLIB origin, the lyrics source.
   - Default: `"https://lrclib.net"`
   - Command line: `--lrclib-base-url`
 
-* **PLAYLIST_PLAYER_AUDIO_DURATION_TOLERANCE_S** - An audio candidate within this many seconds of Spotify's duration gets full marks for duration.
+* **SPOTIFIXED_AUDIO_DURATION_TOLERANCE_S** - An audio candidate within this many seconds of Spotify's duration gets full marks for duration.
   - Default: `"3.0"`
   - Command line: `--audio-duration-tolerance-s`
 
-* **PLAYLIST_PLAYER_AUDIO_DURATION_REJECT_S** - An audio candidate further than this from Spotify's duration is rejected.
+* **SPOTIFIXED_AUDIO_DURATION_REJECT_S** - An audio candidate further than this from Spotify's duration is rejected.
   - Default: `"7.0"`
   - Command line: `--audio-duration-reject-s`
 
-* **PLAYLIST_PLAYER_LYRICS_DURATION_TOLERANCE_S** - A lyrics record further than this from the audio's real duration is still kept, but flagged as low timing confidence.
+* **SPOTIFIXED_LYRICS_DURATION_TOLERANCE_S** - A lyrics record further than this from the audio's real duration is still kept, but flagged as low timing confidence.
   - Default: `"2.0"`
   - Command line: `--lyrics-duration-tolerance-s`
 
-* **PLAYLIST_PLAYER_SYNC_WORKERS** - Tracks processed in parallel. Keep low to stay polite to the sources.
+* **SPOTIFIXED_SYNC_WORKERS** - Tracks processed in parallel. Keep low to stay polite to the sources.
   - Default: `"2"`
   - Command line: `--sync-workers`
 
-* **PLAYLIST_PLAYER_MISS_RETRY_DAYS** - A recorded miss (no lyrics, no audio match) is retried after this many days.
+* **SPOTIFIXED_MISS_RETRY_DAYS** - A recorded miss (no lyrics, no audio match) is retried after this many days.
   - Default: `"14"`
   - Command line: `--miss-retry-days`
 
 
 #### Daemon
 
-* **PLAYLIST_PLAYER_HOST** - Address the daemon binds. Anything other than loopback is refused.
+* **SPOTIFIXED_HOST** - Address the daemon binds. Anything other than loopback is refused.
   - Default: `"127.0.0.1"`
   - Command line: `--host`
 
-* **PLAYLIST_PLAYER_PORT** - Port for the daemon's HTTP API and remote-control page.
+* **SPOTIFIXED_PORT** - Port for the daemon's HTTP API and remote-control page.
   - Default: `"8765"`
   - Command line: `--port`
 
-* **PLAYLIST_PLAYER_MPV_BIN** - mpv executable.
+* **SPOTIFIXED_MPV_BIN** - mpv executable.
   - Default: `"mpv"`
   - Command line: `--mpv-bin`
 
-* **PLAYLIST_PLAYER_MPV_AUDIO_OUTPUT** - mpv --ao value. Empty lets mpv choose; tests use `null` for silence.
+* **SPOTIFIXED_MPV_AUDIO_OUTPUT** - mpv --ao value. Empty lets mpv choose; tests use `null` for silence.
   - Default: `""` (empty)
   - Command line: `--mpv-audio-output`
 
-* **PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN** - Path to mpv's MPRIS plugin (Debian: /usr/lib/mpv-mpris/mpris.so) so desktop media keys control playback. Empty disables it.
+* **SPOTIFIXED_MPV_MPRIS_PLUGIN** - Path to mpv's MPRIS plugin (Debian: /usr/lib/mpv-mpris/mpris.so) so desktop media keys control playback. Empty disables it.
   - Default: `""` (empty)
   - Command line: `--mpv-mpris-plugin`
 
 
 #### Overlay
 
-* **PLAYLIST_PLAYER_OVERLAY_MONITOR** - Output connector to show the overlay on, e.g. DP-2. Empty: compositor's choice.
+* **SPOTIFIXED_OVERLAY_MONITOR** - Output connector to show the overlay on, e.g. DP-2. Empty: compositor's choice.
   - Default: `""` (empty)
   - Command line: `--overlay-monitor`
 
-* **PLAYLIST_PLAYER_OVERLAY_ANCHOR** - Screen edge or corner the overlay is attached to.
+* **SPOTIFIXED_OVERLAY_ANCHOR** - Screen edge or corner the overlay is attached to.
   - Default: `"bottom"`
   - Command line: `--overlay-anchor`
 
-* **PLAYLIST_PLAYER_OVERLAY_MARGIN_X** - Horizontal distance in pixels from the anchored edge.
+* **SPOTIFIXED_OVERLAY_MARGIN_X** - Horizontal distance in pixels from the anchored edge.
   - Default: `"0"`
   - Command line: `--overlay-margin-x`
 
-* **PLAYLIST_PLAYER_OVERLAY_MARGIN_Y** - Vertical distance in pixels from the anchored edge.
+* **SPOTIFIXED_OVERLAY_MARGIN_Y** - Vertical distance in pixels from the anchored edge.
   - Default: `"120"`
   - Command line: `--overlay-margin-y`
 
-* **PLAYLIST_PLAYER_OVERLAY_MAX_WIDTH** - Maximum line width in pixels; longer lines wrap.
+* **SPOTIFIXED_OVERLAY_MAX_WIDTH** - Maximum line width in pixels; longer lines wrap.
   - Default: `"1200"`
   - Command line: `--overlay-max-width`
 
-* **PLAYLIST_PLAYER_OVERLAY_FONT** - Font family and style.
+* **SPOTIFIXED_OVERLAY_FONT** - Font family and style.
   - Default: `"Sans Bold"`
   - Command line: `--overlay-font`
 
-* **PLAYLIST_PLAYER_OVERLAY_FONT_SIZE** - Font size in points.
+* **SPOTIFIXED_OVERLAY_FONT_SIZE** - Font size in points.
   - Default: `"32"`
   - Command line: `--overlay-font-size`
 
-* **PLAYLIST_PLAYER_OVERLAY_COLOR** - Text colour.
+* **SPOTIFIXED_OVERLAY_COLOR** - Text colour.
   - Default: `"#FFFFFF"`
   - Command line: `--overlay-color`
 
-* **PLAYLIST_PLAYER_OVERLAY_OUTLINE_COLOR** - Outline colour, for contrast against any background.
+* **SPOTIFIXED_OVERLAY_OUTLINE_COLOR** - Outline colour, for contrast against any background.
   - Default: `"#000000"`
   - Command line: `--overlay-outline-color`
 
-* **PLAYLIST_PLAYER_OVERLAY_LINES** - 1 shows the current line; 2 adds the next line, dimmed.
+* **SPOTIFIXED_OVERLAY_LINES** - 1 shows the current line; 2 adds the next line, dimmed.
   - Default: `"1"`
   - Command line: `--overlay-lines`
 
-* **PLAYLIST_PLAYER_OVERLAY_LEAD_MS** - Show each line this many milliseconds before its timestamp.
+* **SPOTIFIXED_OVERLAY_LEAD_MS** - Show each line this many milliseconds before its timestamp.
   - Default: `"150"`
   - Command line: `--overlay-lead-ms`
 
-* **PLAYLIST_PLAYER_OVERLAY_FADE_MS** - Fade duration when a line appears or disappears.
+* **SPOTIFIXED_OVERLAY_FADE_MS** - Fade duration when a line appears or disappears.
   - Default: `"120"`
   - Command line: `--overlay-fade-ms`
 
-* **PLAYLIST_PLAYER_OVERLAY_UNDERLINE_WORD** - Underline the word being sung, in the overlay and on the page. The word is estimated from the line timing, so it needs the track's offset to be right.
+* **SPOTIFIXED_OVERLAY_UNDERLINE_WORD** - Underline the word being sung, in the overlay and on the page. The word is estimated from the line timing, so it needs the track's offset to be right.
   - Default: `"false"`
   - Command line: `--overlay-underline-word`
 

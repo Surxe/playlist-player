@@ -8,8 +8,8 @@ import urllib.error
 
 import pytest
 
-from playlist_player.errors import HttpError, NotFoundError
-from playlist_player.http import USER_AGENT, HttpClient
+from spotifixed.errors import HttpError, NotFoundError
+from spotifixed.http import USER_AGENT, HttpClient
 
 
 class Script:

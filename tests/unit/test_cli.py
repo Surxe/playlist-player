@@ -7,9 +7,9 @@ import sys
 
 import pytest
 
-from playlist_player import cli
-from playlist_player.config import REPO_ROOT
-from playlist_player.errors import ConfigError
+from spotifixed import cli
+from spotifixed.config import REPO_ROOT
+from spotifixed.errors import ConfigError
 
 COMMANDS = ["sync", "status", "pin", "serve", "ctl", "overlay", "start"]
 
@@ -48,19 +48,19 @@ def test_a_command_is_required(capsys):
 
 def test_expected_errors_print_one_line_and_exit_1(monkeypatch, capsys):
     def explode(_args):
-        raise ConfigError("PLAYLIST_PLAYER_PORT must be 1-65535, got 0")
+        raise ConfigError("SPOTIFIXED_PORT must be 1-65535, got 0")
 
     monkeypatch.setattr(cli, "load_settings", explode)
     assert cli.main(["status"]) == 1
     err = capsys.readouterr().err
-    assert err.strip() == "playlist_player: PLAYLIST_PLAYER_PORT must be 1-65535, got 0"
+    assert err.strip() == "spotifixed: SPOTIFIXED_PORT must be 1-65535, got 0"
 
 
 def test_runs_as_a_module():
     # The package is run from the repo, not installed, so the child needs the repo root as
     # its working directory (conftest moves this process into a temp directory).
     result = subprocess.run(
-        [sys.executable, "-m", "playlist_player", "--version"],
+        [sys.executable, "-m", "spotifixed", "--version"],
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,

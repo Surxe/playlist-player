@@ -1,4 +1,4 @@
-"""Allow ``python -m playlist_player``."""
+"""Allow ``python -m spotifixed``."""
 
 import sys
 

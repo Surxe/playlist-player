@@ -18,9 +18,9 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player.cache import assets
-from playlist_player.config import REPO_ROOT, load_settings
-from playlist_player.server.app import Daemon
+from spotifixed.cache import assets
+from spotifixed.config import REPO_ROOT, load_settings
+from spotifixed.server.app import Daemon
 from tests.support.library import PLAYLIST_ID, SYNCED, build_library
 from tests.support.playback import FakePlayer
 
@@ -47,9 +47,9 @@ pytestmark = [
 
 @pytest.fixture
 def daemon(store, monkeypatch):
-    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
-    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
-    monkeypatch.setenv("PLAYLIST_PLAYER_OVERLAY_MARGIN_Y", "120")
+    monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
+    monkeypatch.setenv("SPOTIFIXED_OVERLAY_MARGIN_Y", "120")
     build_library(store)
     daemon = Daemon(load_settings(), store, FakePlayer(), port=0, keepalive_s=0.5)
     threading.Thread(target=daemon.serve_forever, daemon=True).start()
@@ -58,7 +58,7 @@ def daemon(store, monkeypatch):
 
 
 def drive(daemon: Daemon, tmp_path: Path, steps: list[dict]) -> list:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PLAYLIST_PLAYER_")}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("SPOTIFIXED_")}
     env.update(CHROME=CHROME, HOME=str(tmp_path), XDG_RUNTIME_DIR=str(tmp_path))
     result = subprocess.run(
         [NODE, str(DRIVER), f"{daemon.url}/", str(tmp_path / "chrome-profile")],
@@ -133,7 +133,7 @@ def test_the_panel_shows_the_settings_and_changes_reach_the_daemon(daemon, tmp_p
     # The panel says changes need no saving, and offers nothing that suggests they do.
     said = " ".join(panel_text.split())
     assert "Changes are saved automatically." in said and "take effect immediately" in said
-    assert "Copy" not in panel_text and "PLAYLIST_PLAYER_" not in panel_text
+    assert "Copy" not in panel_text and "SPOTIFIXED_" not in panel_text
     assert partners == ["48", "#ffe066"]
     assert overridden == [True, False, True] and reset_disabled is False
     assert shot.stat().st_size > 10_000
@@ -211,7 +211,7 @@ def test_the_sample_line_is_asked_for_kept_alive_and_withdrawn(daemon, tmp_path)
     assert daemon.player.calls == []  # the space did not toggle playback
 
 
-def test_the_overlay_switch_turns_it_off_and_on_where_playlist_player_runs_it(daemon, tmp_path):
+def test_the_overlay_switch_turns_it_off_and_on_where_spotifixed_runs_it(daemon, tmp_path):
     unmanaged = drive(daemon, tmp_path, [*OPEN, {"eval": "t.el('overlay-enabled').disabled"}])
     assert unmanaged[-1] is True  # under serve the overlay is run by hand: no switch
 

@@ -9,7 +9,7 @@ import {
   marginSlider,
   parseValue,
   pickerColor,
-} from "../../playlist_player/server/static/overlay.js";
+} from "../../spotifixed/server/static/overlay.js";
 
 const whole = { kind: "int", min: -5000, max: 5000 };
 

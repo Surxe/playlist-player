@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from playlist_player.models import PlaybackState
-from playlist_player.playback.state import StateBus
+from spotifixed.models import PlaybackState
+from spotifixed.playback.state import StateBus
 
 
 class StateLog:
@@ -48,7 +48,7 @@ class FakePlayer:
     """Implements the Player protocol in memory: records calls, publishes plausible state."""
 
     def __init__(self) -> None:
-        from playlist_player.playback.queue import EMPTY_QUEUE
+        from spotifixed.playback.queue import EMPTY_QUEUE
 
         self.bus = StateBus()
         self.calls: list[tuple] = []
@@ -61,7 +61,7 @@ class FakePlayer:
         self._publish()
 
     def _publish(self) -> None:
-        from playlist_player.models import LyricsKind, PlayerStatus
+        from spotifixed.models import LyricsKind, PlayerStatus
 
         entry = self.queue.entry_at(self.index)
         if entry is None:

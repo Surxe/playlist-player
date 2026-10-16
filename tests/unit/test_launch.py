@@ -9,10 +9,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from playlist_player import cli, launch
-from playlist_player.config import load_settings, settings_arguments
-from playlist_player.overlay_settings import OverlaySettings
-from playlist_player.server.overlay_config import OverlayConfig
+from spotifixed import cli, launch
+from spotifixed.config import load_settings, settings_arguments
+from spotifixed.overlay_settings import OverlaySettings
+from spotifixed.server.overlay_config import OverlayConfig
 
 SLEEP = [sys.executable, "-c", "import time; time.sleep(60)"]
 
@@ -23,7 +23,7 @@ def test_settings_flags_given_to_start_are_handed_on_as_given():
     )
     assert settings_arguments(args) == ["--port", "9100", "--overlay-anchor", "top-left"]
     command = launch.overlay_command(settings_arguments(args))
-    assert command[:4] == [sys.executable, "-m", "playlist_player", "overlay"]
+    assert command[:4] == [sys.executable, "-m", "spotifixed", "overlay"]
     # What is handed on parses as the overlay's own flags, to the same settings.
     assert load_settings(cli.build_parser().parse_args(command[3:])) == load_settings(args)
 

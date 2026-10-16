@@ -22,7 +22,7 @@ from typing import Any
 from . import __version__
 from .errors import HttpError, NotFoundError
 
-USER_AGENT = f"playlist-player/{__version__} (+https://github.com/Surxe/playlist-player)"
+USER_AGENT = f"spotifixed/{__version__} (+https://github.com/Surxe/spotifixed)"
 
 _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 _BODY_EXCERPT = 300

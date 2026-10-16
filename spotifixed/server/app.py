@@ -96,7 +96,7 @@ class Daemon:
         daemon = self
 
         class Handler(BaseHTTPRequestHandler):
-            server_version = "playlist-player"
+            server_version = "spotifixed"
             sys_version = ""
 
             def _send(self, response: Response) -> None:
@@ -175,8 +175,8 @@ def runtime_dir() -> Path:
     """Where the mpv socket lives: private to the user and gone at logout."""
     base = os.environ.get("XDG_RUNTIME_DIR")
     if base and Path(base).is_dir():
-        return Path(base) / "playlist-player"
-    return Path(tempfile.gettempdir()) / f"playlist-player-{os.getuid()}"
+        return Path(base) / "spotifixed"
+    return Path(tempfile.gettempdir()) / f"spotifixed-{os.getuid()}"
 
 
 def run(settings: Settings, *, on_ready: Callable[[Daemon], None] | None = None) -> int:
@@ -198,7 +198,7 @@ def run(settings: Settings, *, on_ready: Callable[[Daemon], None] | None = None)
         daemon = Daemon(settings, store, player, log=True)
     except OSError as exc:
         player.close()
-        print(f"playlist_player: cannot listen on {settings.base_url}: {exc}", file=sys.stderr)
+        print(f"spotifixed: cannot listen on {settings.base_url}: {exc}", file=sys.stderr)
         return 1
     except BaseException:
         player.close()  # never leave mpv running behind a daemon that did not start
@@ -213,7 +213,7 @@ def run(settings: Settings, *, on_ready: Callable[[Daemon], None] | None = None)
     # on the spot, with nothing saved and mpv still running with nobody to control it.
     for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(number, stop)
-    print(f"playlist-player daemon on {daemon.url} (cache: {settings.cache_dir})", flush=True)
+    print(f"spotifixed daemon on {daemon.url} (cache: {settings.cache_dir})", flush=True)
     try:
         if on_ready is not None:
             on_ready(daemon)

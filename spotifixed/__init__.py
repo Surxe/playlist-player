@@ -1,4 +1,4 @@
-"""playlist-player: cache a Spotify playlist's audio and time-synced lyrics, play it
+"""spotifixed: cache a Spotify playlist's audio and time-synced lyrics, play it
 through mpv, and show the current lyric line in an overlay.
 
 Package map (imports only ever point downward in this list):

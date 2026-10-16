@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player.cache import assets
-from playlist_player.errors import CacheError
-from playlist_player.models import AudioAsset, LyricsInfo, LyricsKind, TrackState
+from spotifixed.cache import assets
+from spotifixed.errors import CacheError
+from spotifixed.models import AudioAsset, LyricsInfo, LyricsKind, TrackState
 
 
 def put_audio(store, track_id="T1", name="audio.opus", data=b"tone"):

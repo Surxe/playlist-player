@@ -31,7 +31,7 @@ _STOP_TIMEOUT_S = 3.0
 
 def overlay_command(settings_argv: Sequence[str]) -> list[str]:
     """The overlay as a command line, on this interpreter and with these settings flags."""
-    return [sys.executable, "-m", "playlist_player", "overlay", *settings_argv]
+    return [sys.executable, "-m", "spotifixed", "overlay", *settings_argv]
 
 
 class Overlay:
@@ -98,13 +98,13 @@ class Overlay:
                 return  # switched off, and so stopped on purpose
             self._process = None
         print(
-            f"playlist_player: the overlay stopped (exit status {status}); "
+            f"spotifixed: the overlay stopped (exit status {status}); "
             "the daemon and the page carry on without it",
             file=sys.stderr,
             flush=True,
         )
         self._config.report_problem(
-            "The overlay stopped unexpectedly; the playlist-player window says why. "
+            "The overlay stopped unexpectedly; the spotifixed window says why. "
             "Switch it off and on again to retry."
         )
 
@@ -152,7 +152,7 @@ def run(
     """
     if open_page and is_listening(settings):
         # Started a second time, e.g. from a launcher: show what is already running.
-        print(f"playlist-player is already running; opening {settings.base_url}/", flush=True)
+        print(f"spotifixed is already running; opening {settings.base_url}/", flush=True)
         open_url(f"{settings.base_url}/")
         return 0
 
@@ -165,7 +165,7 @@ def run(
             child.follow()
         if open_page:
             open_url(f"{daemon.url}/")
-        print("Ctrl-C, or closing this terminal, stops playlist-player.", flush=True)
+        print("Ctrl-C, or closing this terminal, stops spotifixed.", flush=True)
 
     try:
         return serve(settings, on_ready=ready)

@@ -21,16 +21,16 @@
 # 9 overlay) and geometry as [x, y, width, height].
 #
 # Settings (environment, optional):
-#   PLAYLIST_PLAYER_TEST_WAYLAND   socket name, default wl-pp-test
-#   PLAYLIST_PLAYER_TEST_SIZE      virtual screen as WIDTHxHEIGHT, default 1920x1080
-#   PLAYLIST_PLAYER_TEST_OUTPUTS   number of virtual screens, side by side, default 1
+#   SPOTIFIXED_TEST_WAYLAND   socket name, default wl-pp-test
+#   SPOTIFIXED_TEST_SIZE      virtual screen as WIDTHxHEIGHT, default 1920x1080
+#   SPOTIFIXED_TEST_OUTPUTS   number of virtual screens, side by side, default 1
 set -euo pipefail
 
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-SOCKET="${PLAYLIST_PLAYER_TEST_WAYLAND:-wl-pp-test}"
-SIZE="${PLAYLIST_PLAYER_TEST_SIZE:-1920x1080}"
-OUTPUTS="${PLAYLIST_PLAYER_TEST_OUTPUTS:-1}"
-STATE_DIR="$XDG_RUNTIME_DIR/playlist-player-test"
+SOCKET="${SPOTIFIXED_TEST_WAYLAND:-wl-pp-test}"
+SIZE="${SPOTIFIXED_TEST_SIZE:-1920x1080}"
+OUTPUTS="${SPOTIFIXED_TEST_OUTPUTS:-1}"
+STATE_DIR="$XDG_RUNTIME_DIR/spotifixed-test"
 PID_FILE="$STATE_DIR/$SOCKET.pid"
 BUS_FILE="$STATE_DIR/$SOCKET.bus"
 LOG_FILE="$STATE_DIR/$SOCKET.log"

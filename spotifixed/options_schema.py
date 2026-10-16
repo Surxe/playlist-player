@@ -30,7 +30,7 @@ Anchor = Literal[
 OPTIONS_SCHEMA = {
     # ------------------------------ Storage ------------------------------ #
     "CACHE_DIR": {
-        "env": "PLAYLIST_PLAYER_CACHE_DIR",
+        "env": "SPOTIFIXED_CACHE_DIR",
         "arg": "--cache-dir",
         "type": str,
         "default": "cache",
@@ -41,7 +41,7 @@ OPTIONS_SCHEMA = {
         ),
     },
     "STATE_DIR": {
-        "env": "PLAYLIST_PLAYER_STATE_DIR",
+        "env": "SPOTIFIXED_STATE_DIR",
         "arg": "--state-dir",
         "type": str,
         "default": "state",
@@ -68,7 +68,7 @@ OPTIONS_SCHEMA = {
         ),
     },
     "TRACKLIST_ACTOR": {
-        "env": "PLAYLIST_PLAYER_TRACKLIST_ACTOR",
+        "env": "SPOTIFIXED_TRACKLIST_ACTOR",
         "arg": "--tracklist-actor",
         "type": str,
         "default": "s-r~free-spotify-playlist-intelligence",
@@ -79,7 +79,7 @@ OPTIONS_SCHEMA = {
         ),
     },
     "APIFY_MAX_CHARGE_USD": {
-        "env": "PLAYLIST_PLAYER_APIFY_MAX_CHARGE_USD",
+        "env": "SPOTIFIXED_APIFY_MAX_CHARGE_USD",
         "arg": "--apify-max-charge-usd",
         "type": float,
         "default": 0.05,
@@ -87,7 +87,7 @@ OPTIONS_SCHEMA = {
         "help": "Charge cap sent with each Actor run, in US dollars.",
     },
     "APIFY_BASE_URL": {
-        "env": "PLAYLIST_PLAYER_APIFY_BASE_URL",
+        "env": "SPOTIFIXED_APIFY_BASE_URL",
         "arg": "--apify-base-url",
         "type": str,
         "default": "https://api.apify.com",
@@ -96,7 +96,7 @@ OPTIONS_SCHEMA = {
     },
     # -------------------------------- Sync ------------------------------- #
     "LRCLIB_BASE_URL": {
-        "env": "PLAYLIST_PLAYER_LRCLIB_BASE_URL",
+        "env": "SPOTIFIXED_LRCLIB_BASE_URL",
         "arg": "--lrclib-base-url",
         "type": str,
         "default": "https://lrclib.net",
@@ -104,7 +104,7 @@ OPTIONS_SCHEMA = {
         "help": "LRCLIB origin, the lyrics source.",
     },
     "AUDIO_DURATION_TOLERANCE_S": {
-        "env": "PLAYLIST_PLAYER_AUDIO_DURATION_TOLERANCE_S",
+        "env": "SPOTIFIXED_AUDIO_DURATION_TOLERANCE_S",
         "arg": "--audio-duration-tolerance-s",
         "type": float,
         "default": 3.0,
@@ -115,7 +115,7 @@ OPTIONS_SCHEMA = {
         ),
     },
     "AUDIO_DURATION_REJECT_S": {
-        "env": "PLAYLIST_PLAYER_AUDIO_DURATION_REJECT_S",
+        "env": "SPOTIFIXED_AUDIO_DURATION_REJECT_S",
         "arg": "--audio-duration-reject-s",
         "type": float,
         "default": 7.0,
@@ -123,7 +123,7 @@ OPTIONS_SCHEMA = {
         "help": "An audio candidate further than this from Spotify's duration is rejected.",
     },
     "LYRICS_DURATION_TOLERANCE_S": {
-        "env": "PLAYLIST_PLAYER_LYRICS_DURATION_TOLERANCE_S",
+        "env": "SPOTIFIXED_LYRICS_DURATION_TOLERANCE_S",
         "arg": "--lyrics-duration-tolerance-s",
         "type": float,
         "default": 2.0,
@@ -134,7 +134,7 @@ OPTIONS_SCHEMA = {
         ),
     },
     "SYNC_WORKERS": {
-        "env": "PLAYLIST_PLAYER_SYNC_WORKERS",
+        "env": "SPOTIFIXED_SYNC_WORKERS",
         "arg": "--sync-workers",
         "type": int,
         "default": 2,
@@ -142,7 +142,7 @@ OPTIONS_SCHEMA = {
         "help": "Tracks processed in parallel. Keep low to stay polite to the sources.",
     },
     "MISS_RETRY_DAYS": {
-        "env": "PLAYLIST_PLAYER_MISS_RETRY_DAYS",
+        "env": "SPOTIFIXED_MISS_RETRY_DAYS",
         "arg": "--miss-retry-days",
         "type": int,
         "default": 14,
@@ -151,7 +151,7 @@ OPTIONS_SCHEMA = {
     },
     # ------------------------------- Daemon ------------------------------ #
     "HOST": {
-        "env": "PLAYLIST_PLAYER_HOST",
+        "env": "SPOTIFIXED_HOST",
         "arg": "--host",
         "type": str,
         "default": "127.0.0.1",
@@ -159,7 +159,7 @@ OPTIONS_SCHEMA = {
         "help": "Address the daemon binds. Anything other than loopback is refused.",
     },
     "PORT": {
-        "env": "PLAYLIST_PLAYER_PORT",
+        "env": "SPOTIFIXED_PORT",
         "arg": "--port",
         "type": int,
         "default": 8765,
@@ -167,7 +167,7 @@ OPTIONS_SCHEMA = {
         "help": "Port for the daemon's HTTP API and remote-control page.",
     },
     "MPV_BIN": {
-        "env": "PLAYLIST_PLAYER_MPV_BIN",
+        "env": "SPOTIFIXED_MPV_BIN",
         "arg": "--mpv-bin",
         "type": str,
         "default": "mpv",
@@ -175,7 +175,7 @@ OPTIONS_SCHEMA = {
         "help": "mpv executable.",
     },
     "MPV_AUDIO_OUTPUT": {
-        "env": "PLAYLIST_PLAYER_MPV_AUDIO_OUTPUT",
+        "env": "SPOTIFIXED_MPV_AUDIO_OUTPUT",
         "arg": "--mpv-audio-output",
         "type": str,
         "default": "",
@@ -183,7 +183,7 @@ OPTIONS_SCHEMA = {
         "help": "mpv --ao value. Empty lets mpv choose; tests use `null` for silence.",
     },
     "MPV_MPRIS_PLUGIN": {
-        "env": "PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN",
+        "env": "SPOTIFIXED_MPV_MPRIS_PLUGIN",
         "arg": "--mpv-mpris-plugin",
         "type": str,
         "default": "",
@@ -195,7 +195,7 @@ OPTIONS_SCHEMA = {
     },
     # ------------------------------- Overlay ----------------------------- #
     "OVERLAY_MONITOR": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_MONITOR",
+        "env": "SPOTIFIXED_OVERLAY_MONITOR",
         "arg": "--overlay-monitor",
         "type": str,
         "default": "",
@@ -203,7 +203,7 @@ OPTIONS_SCHEMA = {
         "help": "Output connector to show the overlay on, e.g. DP-2. Empty: compositor's choice.",
     },
     "OVERLAY_ANCHOR": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_ANCHOR",
+        "env": "SPOTIFIXED_OVERLAY_ANCHOR",
         "arg": "--overlay-anchor",
         "type": Anchor,
         "default": "bottom",
@@ -211,7 +211,7 @@ OPTIONS_SCHEMA = {
         "help": "Screen edge or corner the overlay is attached to.",
     },
     "OVERLAY_MARGIN_X": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_MARGIN_X",
+        "env": "SPOTIFIXED_OVERLAY_MARGIN_X",
         "arg": "--overlay-margin-x",
         "type": int,
         "default": 0,
@@ -219,7 +219,7 @@ OPTIONS_SCHEMA = {
         "help": "Horizontal distance in pixels from the anchored edge.",
     },
     "OVERLAY_MARGIN_Y": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_MARGIN_Y",
+        "env": "SPOTIFIXED_OVERLAY_MARGIN_Y",
         "arg": "--overlay-margin-y",
         "type": int,
         "default": 120,
@@ -227,7 +227,7 @@ OPTIONS_SCHEMA = {
         "help": "Vertical distance in pixels from the anchored edge.",
     },
     "OVERLAY_MAX_WIDTH": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_MAX_WIDTH",
+        "env": "SPOTIFIXED_OVERLAY_MAX_WIDTH",
         "arg": "--overlay-max-width",
         "type": int,
         "default": 1200,
@@ -235,7 +235,7 @@ OPTIONS_SCHEMA = {
         "help": "Maximum line width in pixels; longer lines wrap.",
     },
     "OVERLAY_FONT": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_FONT",
+        "env": "SPOTIFIXED_OVERLAY_FONT",
         "arg": "--overlay-font",
         "type": str,
         "default": "Sans Bold",
@@ -243,7 +243,7 @@ OPTIONS_SCHEMA = {
         "help": "Font family and style.",
     },
     "OVERLAY_FONT_SIZE": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_FONT_SIZE",
+        "env": "SPOTIFIXED_OVERLAY_FONT_SIZE",
         "arg": "--overlay-font-size",
         "type": int,
         "default": 32,
@@ -251,7 +251,7 @@ OPTIONS_SCHEMA = {
         "help": "Font size in points.",
     },
     "OVERLAY_COLOR": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_COLOR",
+        "env": "SPOTIFIXED_OVERLAY_COLOR",
         "arg": "--overlay-color",
         "type": str,
         "default": "#FFFFFF",
@@ -259,7 +259,7 @@ OPTIONS_SCHEMA = {
         "help": "Text colour.",
     },
     "OVERLAY_OUTLINE_COLOR": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_OUTLINE_COLOR",
+        "env": "SPOTIFIXED_OVERLAY_OUTLINE_COLOR",
         "arg": "--overlay-outline-color",
         "type": str,
         "default": "#000000",
@@ -267,7 +267,7 @@ OPTIONS_SCHEMA = {
         "help": "Outline colour, for contrast against any background.",
     },
     "OVERLAY_LINES": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_LINES",
+        "env": "SPOTIFIXED_OVERLAY_LINES",
         "arg": "--overlay-lines",
         "type": int,
         "default": 1,
@@ -275,7 +275,7 @@ OPTIONS_SCHEMA = {
         "help": "1 shows the current line; 2 adds the next line, dimmed.",
     },
     "OVERLAY_LEAD_MS": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_LEAD_MS",
+        "env": "SPOTIFIXED_OVERLAY_LEAD_MS",
         "arg": "--overlay-lead-ms",
         "type": int,
         "default": 150,
@@ -283,7 +283,7 @@ OPTIONS_SCHEMA = {
         "help": "Show each line this many milliseconds before its timestamp.",
     },
     "OVERLAY_FADE_MS": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_FADE_MS",
+        "env": "SPOTIFIXED_OVERLAY_FADE_MS",
         "arg": "--overlay-fade-ms",
         "type": int,
         "default": 120,
@@ -291,7 +291,7 @@ OPTIONS_SCHEMA = {
         "help": "Fade duration when a line appears or disappears.",
     },
     "OVERLAY_UNDERLINE_WORD": {
-        "env": "PLAYLIST_PLAYER_OVERLAY_UNDERLINE_WORD",
+        "env": "SPOTIFIXED_OVERLAY_UNDERLINE_WORD",
         "arg": "--overlay-underline-word",
         "type": bool,
         "default": False,

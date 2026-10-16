@@ -7,14 +7,14 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player.align import MIN_CONFIDENCE, WordSpan, align_tracks, settle, spell, summary
-from playlist_player.align import windows as line_windows
-from playlist_player.align.plan import AUDIBLE_VOICE, voice_share
-from playlist_player.cache import assets
-from playlist_player.errors import PlaylistPlayerError
-from playlist_player.lyrics import parse_lrc
-from playlist_player.models import AudioAsset, LyricLine
-from playlist_player.server.library import Library
+from spotifixed.align import MIN_CONFIDENCE, WordSpan, align_tracks, settle, spell, summary
+from spotifixed.align import windows as line_windows
+from spotifixed.align.plan import AUDIBLE_VOICE, voice_share
+from spotifixed.cache import assets
+from spotifixed.errors import PlaylistPlayerError
+from spotifixed.lyrics import parse_lrc
+from spotifixed.models import AudioAsset, LyricLine
+from spotifixed.server.library import Library
 from tests.support.library import PLAYLIST_ID, SYNCED, build_library, track_id
 
 # ----------------------------------- plan ---------------------------------- #

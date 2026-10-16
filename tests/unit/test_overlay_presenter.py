@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player.errors import ConfigError
-from playlist_player.lyrics import line_times, parse_lrc, word_ends
-from playlist_player.models import LyricsKind, PlaybackState, PlayerStatus
-from playlist_player.overlay.clock import now_epoch_ms, position_ms
-from playlist_player.overlay.presenter import (
+from spotifixed.errors import ConfigError
+from spotifixed.lyrics import line_times, parse_lrc, word_ends
+from spotifixed.models import LyricsKind, PlaybackState, PlayerStatus
+from spotifixed.overlay.clock import now_epoch_ms, position_ms
+from spotifixed.overlay.presenter import (
     HIDDEN,
     SAMPLE_NEXT,
     SAMPLE_TEXT,
@@ -17,7 +17,7 @@ from playlist_player.overlay.presenter import (
     present,
     sample_view,
 )
-from playlist_player.overlay.render.base import Placement, Style
+from spotifixed.overlay.render.base import Placement, Style
 
 LINES = parse_lrc(
     "[00:10.00] an invented first line\n"

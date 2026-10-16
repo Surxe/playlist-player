@@ -228,7 +228,7 @@ export function initOverlayPanel({ getJson, postJson }) {
     const enabled = doc.enabled !== false;
     els.status.textContent = !enabled ? "overlay off" : running ? "overlay running" : "overlay not running";
     els.status.className = `pill ${running ? "on" : "off"}`;
-    // Only an overlay that playlist-player started itself can be switched from here.
+    // Only an overlay that spotifixed started itself can be switched from here.
     els.enabled.checked = enabled;
     els.enabled.disabled = !doc.managed;
     els.enabled.parentElement.title = doc.managed

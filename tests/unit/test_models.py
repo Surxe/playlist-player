@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from playlist_player.models import LyricsKind, PlaybackState, PlayerStatus, Playlist, Track
+from spotifixed.models import LyricsKind, PlaybackState, PlayerStatus, Playlist, Track
 
 
 def test_track_round_trips_through_json():

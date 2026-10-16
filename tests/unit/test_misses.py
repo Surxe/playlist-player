@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from playlist_player.cache import MissLog
+from spotifixed.cache import MissLog
 
 
 def test_record_then_skip_until_the_retry_window_passes(store):

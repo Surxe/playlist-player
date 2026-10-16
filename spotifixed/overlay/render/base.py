@@ -56,8 +56,7 @@ class Placement:
     def from_settings(cls, anchor: str, margin_x: int, margin_y: int) -> Placement:
         if anchor not in _ANCHORS:
             raise ConfigError(
-                f"PLAYLIST_PLAYER_OVERLAY_ANCHOR must be one of {', '.join(_ANCHORS)}; "
-                f"got {anchor!r}"
+                f"SPOTIFIXED_OVERLAY_ANCHOR must be one of {', '.join(_ANCHORS)}; got {anchor!r}"
             )
         edges = frozenset(_ANCHORS[anchor])
         margins = {edge: 0 for edge in _EDGES}
@@ -88,7 +87,7 @@ class Style:
         for name, value in (("COLOR", self.color), ("OUTLINE_COLOR", self.outline_color)):
             if not _COLOR.fullmatch(value):
                 raise ConfigError(
-                    f"PLAYLIST_PLAYER_OVERLAY_{name} must be a colour like #RRGGBB; got {value!r}"
+                    f"SPOTIFIXED_OVERLAY_{name} must be a colour like #RRGGBB; got {value!r}"
                 )
         if self.font_size < 1 or self.max_width < 1:
             raise ConfigError("overlay font size and maximum width must be positive")

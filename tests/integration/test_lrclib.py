@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player.cache import assets
-from playlist_player.http import USER_AGENT, HttpClient
-from playlist_player.models import LyricsKind, Track
-from playlist_player.sources.lyrics import LrclibSource
-from playlist_player.sync.lyrics import LyricsStage
-from playlist_player.sync.stages import Outcome
+from spotifixed.cache import assets
+from spotifixed.http import USER_AGENT, HttpClient
+from spotifixed.models import LyricsKind, Track
+from spotifixed.sources.lyrics import LrclibSource
+from spotifixed.sync.lyrics import LyricsStage
+from spotifixed.sync.stages import Outcome
 from tests.support.lrclib import PLAIN_TEXT, SYNCED_TEXT, api_record
 
 TRACK = Track(

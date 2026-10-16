@@ -1,7 +1,7 @@
 """Guards against the repo silently losing source files.
 
 The data directory is called ``cache`` and so is a source package. An unanchored
-``cache/`` rule in ``.gitignore`` once kept ``playlist_player/cache/`` out of a commit
+``cache/`` rule in ``.gitignore`` once kept ``spotifixed/cache/`` out of a commit
 while every test still passed, because the files were present on the author's disk.
 """
 
@@ -13,13 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player.config import REPO_ROOT
+from spotifixed.config import REPO_ROOT
 
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None or not (REPO_ROOT / ".git").exists(), reason="not a git checkout"
 )
 
-SOURCE_DIRS = ("playlist_player", "tests", "scripts")
+SOURCE_DIRS = ("spotifixed", "tests", "scripts")
 
 
 def _source_files() -> list[str]:

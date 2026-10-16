@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from playlist_player.lyrics import parse_lrc
-from playlist_player.models import LyricLine
+from spotifixed.lyrics import parse_lrc
+from spotifixed.models import LyricLine
 
 
 def pairs(text: str) -> list[tuple[int, str]]:

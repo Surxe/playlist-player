@@ -7,7 +7,7 @@ whenever it changes, in the same way the state bus does for playback.
 
 The document also carries the overlay's on/off switch, ``enabled``. Under ``start`` the
 overlay is a child process that follows it: switched off, the overlay is not running at
-all, and switched on it is started again (see :mod:`playlist_player.launch`). The daemon
+all, and switched on it is started again (see :mod:`spotifixed.launch`). The daemon
 only holds the switch; ``managed`` says whether anything is following it, which is not
 the case under ``serve`` or ``start --no-overlay``, where the overlay is run by hand if
 at all. ``problem`` is a sentence for the page when the overlay stopped by itself.
@@ -73,14 +73,14 @@ class OverlayConfig:
         try:
             stored = self._store.read_json(self._store.overlay_json, {})
         except (CacheError, OSError) as exc:
-            print(f"playlist_player: {exc}; starting without overlay overrides", file=sys.stderr)
+            print(f"spotifixed: {exc}; starting without overlay overrides", file=sys.stderr)
             return {}
         if not isinstance(stored, dict):
             stored = {}
         self._enabled = stored.get("enabled") is not False  # anything but a stored False is on
         kept, notes = salvage(stored.get("overrides", {}))
         for note in notes:
-            print(f"playlist_player: {note}", file=sys.stderr)
+            print(f"spotifixed: {note}", file=sys.stderr)
         return prune(self._defaults, kept)
 
     def _save(self, overrides: Mapping[str, Any], enabled: bool) -> None:
@@ -148,7 +148,7 @@ class OverlayConfig:
     def update(self, changes: Mapping[str, Any]) -> dict[str, Any]:
         """Set overrides; a ``None`` value drops one. All of ``changes`` applies or none.
 
-        Raises :class:`~playlist_player.overlay_settings.OverlaySettingError` for a value
+        Raises :class:`~spotifixed.overlay_settings.OverlaySettingError` for a value
         a setting cannot take, and :class:`OSError` or ``CacheError`` if the result
         cannot be saved (in which case nothing changes).
         """
@@ -199,15 +199,15 @@ class OverlayConfig:
     def set_enabled(self, enabled: bool) -> dict[str, Any]:
         """Switch the overlay on or off, for whatever follows the switch to act on.
 
-        Raises :class:`~playlist_player.overlay_settings.OverlaySettingError` when nothing
+        Raises :class:`~spotifixed.overlay_settings.OverlaySettingError` when nothing
         follows it, since the switch would then do nothing, and :class:`OSError` or
         ``CacheError`` if it cannot be saved (in which case nothing changes).
         """
         with self._lock:
             if not self._managed:
                 raise OverlaySettingError(
-                    "the overlay is not started by playlist-player here, so it cannot be "
-                    "switched on or off from the page; start playlist-player with `start`"
+                    "the overlay is not started by spotifixed here, so it cannot be "
+                    "switched on or off from the page; start spotifixed with `start`"
                 )
             if enabled == self._enabled:
                 listeners = []

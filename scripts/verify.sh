@@ -21,7 +21,7 @@ case "${1:-}" in
         "$RUFF" format --check .
         ;;
     --head)
-        export_dir="$(mktemp -d "${TMPDIR:-/tmp}/playlist-player-head.XXXXXX")"
+        export_dir="$(mktemp -d "${TMPDIR:-/tmp}/spotifixed-head.XXXXXX")"
         trap 'rm -rf "$export_dir"' EXIT
         git -C "$REPO_ROOT" archive HEAD | tar -x -C "$export_dir"
         cd "$export_dir"

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player.models import LyricsKind, Track
-from playlist_player.sources.lyrics import LyricsRecord
-from playlist_player.sync.matching import (
+from spotifixed.models import LyricsKind, Track
+from spotifixed.sources.lyrics import LyricsRecord
+from spotifixed.sync.matching import (
     choose_lyrics,
     is_same_song,
     matching_records,

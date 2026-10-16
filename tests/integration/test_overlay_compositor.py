@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player.config import REPO_ROOT, load_settings
-from playlist_player.server.app import Daemon
+from spotifixed.config import REPO_ROOT, load_settings
+from spotifixed.server.app import Daemon
 from tests.integration.test_serve_process import serve  # noqa: F401  (a fixture)
 from tests.support.library import PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer
@@ -55,8 +55,8 @@ pytestmark = [
 
 # A second compositor with two screens side by side, for moving between monitors.
 TWO_SCREENS = {
-    "PLAYLIST_PLAYER_TEST_WAYLAND": "wl-pp-test-two",
-    "PLAYLIST_PLAYER_TEST_OUTPUTS": "2",
+    "SPOTIFIXED_TEST_WAYLAND": "wl-pp-test-two",
+    "SPOTIFIXED_TEST_OUTPUTS": "2",
 }
 
 
@@ -90,10 +90,10 @@ def two_screens():
 
 
 def child_env(tmp_path, **settings: str) -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PLAYLIST_PLAYER_")}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("SPOTIFIXED_")}
     env.update(XDG_RUNTIME_DIR=str(RUNTIME), PYTHONPATH=str(REPO_ROOT))
     env.pop("APIFY_TOKEN", None)
-    env.update({f"PLAYLIST_PLAYER_{name}": value for name, value in settings.items()})
+    env.update({f"SPOTIFIXED_{name}": value for name, value in settings.items()})
     return env
 
 
@@ -116,7 +116,7 @@ def wait_until(predicate, timeout=5.0):
 def snapshot(tmp_path, name: str, **settings: str) -> tuple[int, int]:
     out = tmp_path / name
     result = subprocess.run(
-        ["bash", str(KWIN), "run", sys.executable, "-m", "playlist_player", "overlay",
+        ["bash", str(KWIN), "run", sys.executable, "-m", "spotifixed", "overlay",
          "--demo", "--snapshot", str(out)],
         capture_output=True, text=True, timeout=60, cwd=tmp_path,
         env=child_env(tmp_path, **settings),
@@ -148,7 +148,7 @@ def test_font_size_and_colours_are_applied_without_error(compositor, tmp_path):
 
 def test_bad_settings_and_no_display_are_one_clear_line(compositor, tmp_path):
     def run(env):
-        command = [sys.executable, "-m", "playlist_player", "overlay", "--snapshot"]
+        command = [sys.executable, "-m", "spotifixed", "overlay", "--snapshot"]
         return subprocess.run(
             [*command, str(tmp_path / "x.png")],
             capture_output=True,
@@ -178,8 +178,8 @@ def test_bad_settings_and_no_display_are_one_clear_line(compositor, tmp_path):
 def test_the_overlay_follows_playback_on_the_overlay_layer(
     compositor, store, tmp_path, monkeypatch
 ):
-    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
-    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+    monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
     build_library(store)
     player = FakePlayer()
     daemon = Daemon(load_settings(), store, player, port=0, keepalive_s=0.5)
@@ -244,7 +244,7 @@ def test_the_overlay_follows_playback_on_the_overlay_layer(
     # What the surface is, from inside the client.
     shown = first(lambda s: s["mapped"], base)
     assert shown["is_layer_window"] is True
-    assert (shown["layer"], shown["namespace"]) == ("overlay", "playlist-player-lyrics")
+    assert (shown["layer"], shown["namespace"]) == ("overlay", "spotifixed-lyrics")
     assert (shown["keyboard_mode"], shown["exclusive_zone"]) == ("none", -1)
     assert shown["anchors"] == ["bottom", "right"]
     assert shown["margins"] == {"top": 0, "bottom": 90, "left": 0, "right": 40}
@@ -293,8 +293,8 @@ def test_settings_changed_through_the_daemon_move_and_restyle_the_running_overla
     The window must move and resize where it stands. If it were unmapped and mapped
     again for each change it would flicker under the user's hand while they position it.
     """
-    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
-    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+    monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
     build_library(store)
     daemon = Daemon(load_settings(), store, FakePlayer(), port=0, keepalive_s=0.5)
     threading.Thread(target=daemon.serve_forever, daemon=True).start()
@@ -391,8 +391,8 @@ class LiveOverlay:
     """A daemon with a fake player and a real overlay following it, sampled every 10 ms."""
 
     def __init__(self, store, tmp_path, monkeypatch, *, extra_env=None, **settings: str):
-        monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
-        monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+        monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+        monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
         build_library(store)
         self.extra_env = extra_env or {}
         self.player = FakePlayer()

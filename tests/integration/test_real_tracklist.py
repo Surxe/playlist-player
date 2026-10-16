@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player.cache import CacheStore
-from playlist_player.config import REPO_ROOT
-from playlist_player.http import HttpClient
-from playlist_player.sources.tracklist import build_tracklist_source
-from playlist_player.sources.tracklist.apify_spotify import ACTOR
-from playlist_player.sync.tracklist import load_tracklist
+from spotifixed.cache import CacheStore
+from spotifixed.config import REPO_ROOT
+from spotifixed.http import HttpClient
+from spotifixed.sources.tracklist import build_tracklist_source
+from spotifixed.sources.tracklist.apify_spotify import ACTOR
+from spotifixed.sync.tracklist import load_tracklist
 
 pytestmark = pytest.mark.localcache
 

@@ -17,9 +17,9 @@ import time
 from pathlib import Path
 
 # First, and before anything that could import gi: this import loads libgtk4-layer-shell.
-from playlist_player.overlay import main as overlay_main  # isort: skip
-from playlist_player.config import load_settings
-from playlist_player.overlay.clock import now_epoch_ms
+from spotifixed.overlay import main as overlay_main  # isort: skip
+from spotifixed.config import load_settings
+from spotifixed.overlay.clock import now_epoch_ms
 
 MAX_SECONDS = 30
 

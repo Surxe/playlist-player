@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player import cli
-from playlist_player.cache import CacheStore
-from playlist_player.sources.tracklist.apify_spotify import ACTOR
+from spotifixed import cli
+from spotifixed.cache import CacheStore
+from spotifixed.sources.tracklist.apify_spotify import ACTOR
 from tests.support.tracklists import PLAYLIST_ID, playlist_row, response, track_item
 
 ONLY = ["--only", "tracklist"]
@@ -23,10 +23,10 @@ URL = f"https://open.spotify.com/intl-de/playlist/{PLAYLIST_ID}?si=tracking"
 @pytest.fixture
 def env(fake_server, tmp_path, monkeypatch):
     """Point the CLI at the fake API and a temp cache; return the store it will use."""
-    monkeypatch.setenv("PLAYLIST_PLAYER_APIFY_BASE_URL", fake_server.url)
-    monkeypatch.setenv("PLAYLIST_PLAYER_LRCLIB_BASE_URL", fake_server.url)
-    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SPOTIFIXED_APIFY_BASE_URL", fake_server.url)
+    monkeypatch.setenv("SPOTIFIXED_LRCLIB_BASE_URL", fake_server.url)
+    monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("APIFY_TOKEN", TOKEN)
     return CacheStore(tmp_path / "cache", tmp_path / "state")
 
@@ -42,7 +42,7 @@ def test_sync_sends_the_expected_request_and_caches_the_result(env, fake_server,
     assert request.query == {"clean": "true", "format": "json", "maxTotalChargeUsd": "0.05"}
     assert request.headers["authorization"] == f"Bearer {TOKEN}"
     assert request.headers["content-type"] == "application/json"
-    assert request.headers["user-agent"].startswith("playlist-player/")
+    assert request.headers["user-agent"].startswith("spotifixed/")
     # The canonical URL, with the tracking parameter and locale prefix stripped; and
     # snapshots off, always.
     assert request.json() == {
@@ -81,7 +81,7 @@ def test_missing_token_is_one_clear_line_and_no_request(env, fake_server, monkey
     assert cli.main(["sync", URL, *ONLY]) == 1
     assert fake_server.requests == []
     err = capsys.readouterr().err
-    assert err.startswith("playlist_player: APIFY_TOKEN is not set") and err.count("\n") == 1
+    assert err.startswith("spotifixed: APIFY_TOKEN is not set") and err.count("\n") == 1
     assert not env.cache_dir.exists()
 
 
