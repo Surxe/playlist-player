@@ -80,6 +80,11 @@ const overlayPanel = initOverlayPanel({ getJson, postJson });
 initSettingsPane([
   initPlaybackSettings({ getJson, postJson }),
   initSwitches({
+    getJson, postJson, noteId: "playback-note",
+    ids: { mono: "mono" },
+    changed: () => {},
+  }),
+  initSwitches({
     getJson, postJson, noteId: "track-note",
     ids: { include_without_lyrics: "include-without-lyrics", include_without_audio: "include-without-audio" },
     changed: () => playlist && showPlaylist(playlist.id),

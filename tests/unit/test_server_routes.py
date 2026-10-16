@@ -205,6 +205,7 @@ def test_the_session_document_says_what_would_be_resumed(routes, player):
             "include_without_audio": True,
             "show_lyrics": True,
             "show_position": True,
+            "mono": False,
         },
     }  # fmt: skip
     post(routes, "/player/load", {"playlist_id": PLAYLIST_ID})

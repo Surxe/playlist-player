@@ -54,6 +54,14 @@ _MAX_SOCKET_PATH = 108
 _FADE_FLOOR_DB = -60.0
 _FADE_STEP_S = 0.05
 
+# Mono: both ears get the average of the two channels. The output stays two-channel, so
+# the mix does not depend on how the sound server spreads a one-channel stream. aformat
+# first brings any source to stereo (a mono file is copied to both sides, surround is
+# folded down), so the pan always has two channels to average.
+_MONO_FILTER = (
+    "@mono:lavfi=[aformat=channel_layouts=stereo,pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1]"
+)
+
 _CLOSED = object()  # inbox token: the IPC connection ended
 _REFRESH = object()  # inbox token: publish a fresh snapshot now
 
@@ -97,6 +105,8 @@ class MpvPlayer:
         self._fade_len = 0.0
         self._fade_s: float | None = None
         self._fade_run = 0
+        # Whether the sound is mixed to mono. An mpv started later is started with it.
+        self._mono = False
         # The volume last set or reported. An mpv started later is started at it, so a
         # player that had to be restarted does not come back at mpv's default of 100.
         self._volume: float | None = None
@@ -131,6 +141,8 @@ class MpvPlayer:
             args.append(f"--ao={self._audio_output}")
         if self._volume is not None:
             args.append(f"--volume={self._volume:g}")
+        if self._mono:
+            args.append(f"--af={_MONO_FILTER}")
         if self._mpris_plugin:
             # An explicit --script still loads with --load-scripts=no; that flag only
             # stops mpv scanning its script directories.
@@ -398,6 +410,17 @@ class MpvPlayer:
                     return  # mpv went away; the one that replaces it starts with no gain set
             if share >= 1:
                 return
+
+    def set_mono(self, on: bool) -> None:
+        # The whole filter list is ours (mpv runs with no config), so it is set outright
+        # rather than added to: setting it twice is the same as setting it once.
+        with self._lock:
+            self._mono = bool(on)
+            try:
+                self._command("set_property", "af", _MONO_FILTER if self._mono else "")
+            except MpvCommandError as exc:
+                self._mono = False
+                raise PlaybackError(f"mpv could not mix to mono: {exc}") from exc
 
     def set_offset(self, track_id: str, offset_ms: int) -> None:
         if self._reducer.queue.set_offset(track_id, offset_ms):

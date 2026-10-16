@@ -10,7 +10,7 @@ import pytest
 
 from playlist_player.cache import assets
 from playlist_player.config import load_settings
-from playlist_player.errors import NotInCacheError
+from playlist_player.errors import NotInCacheError, PlaybackError
 from playlist_player.models import PlaybackState, PlayerStatus
 from playlist_player.server.app import Daemon
 from playlist_player.server.library import Library
@@ -412,6 +412,43 @@ def test_a_stored_fade_in_that_makes_no_sense_counts_as_off(store, library):
         session.resume()
         assert session.document()["settings"]["fade_in_s"] == 0.0
         assert player.calls == []
+
+
+def test_mono_is_off_until_it_is_turned_on_and_reaches_the_player_at_once(store, library):
+    session, player = session_on(store, library)
+    assert session.document()["settings"]["mono"] is False
+    assert session.set_settings({"mono": True})["settings"]["mono"] is True
+    assert saved(store)["settings"] == {"mono": True}
+    session.set_settings({"mono": False})
+    session.set_settings({"fade_in_s": 2})
+    assert [call for call in player.calls if call[0] == "set_mono"] == [
+        ("set_mono", True),
+        ("set_mono", False),
+    ]
+    with pytest.raises(SettingError, match="true or false"):
+        session.set_settings({"mono": 1})
+
+
+def test_a_start_turns_mono_on_only_when_it_was_left_on(store, library):
+    for stored, calls in (({"mono": True}, [("set_mono", True)]), ({"mono": "yes"}, [])):
+        store.write_json(store.session_json, {"settings": stored})
+        session, player = session_on(store, library)
+        session.resume()
+        assert player.calls == calls
+    assert session.document()["settings"]["mono"] is False  # only a stored true is on
+
+
+def test_a_player_that_cannot_mix_to_mono_does_not_stop_the_setting_being_kept(
+    store, library, monkeypatch, capsys
+):
+    session, player = session_on(store, library)
+
+    def refuse(on):
+        raise PlaybackError("mpv could not mix to mono")
+
+    monkeypatch.setattr(player, "set_mono", refuse)
+    assert session.set_settings({"mono": True})["settings"]["mono"] is True
+    assert "the mono setting is not in force" in capsys.readouterr().err
 
 
 # ------------------------------ track filters ---------------------------- #

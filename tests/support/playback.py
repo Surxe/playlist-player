@@ -147,6 +147,9 @@ class FakePlayer:
     def set_fade_in(self, seconds: float) -> None:
         self._record("set_fade_in", seconds)
 
+    def set_mono(self, on: bool) -> None:
+        self._record("set_mono", on)
+
     def set_offset(self, track_id: str, offset_ms: int) -> None:
         self._record("set_offset", track_id, offset_ms)
         if self.queue.set_offset(track_id, offset_ms):

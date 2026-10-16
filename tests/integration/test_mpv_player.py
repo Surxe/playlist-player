@@ -11,6 +11,7 @@ import signal
 import subprocess
 import tempfile
 import time
+import wave
 from pathlib import Path
 
 import pytest
@@ -596,3 +597,55 @@ def test_a_fade_of_no_length_and_an_mpv_without_the_control_do_nothing(
     assert "no fade-in with this mpv" in capsys.readouterr().err
     player.play()
     log.wait_for(playing("T0"))  # and playback is unaffected
+
+
+def filters(player) -> list:
+    return player._command("get_property", "af")
+
+
+def test_mono_mixes_while_playing_turns_off_and_outlives_a_restart(make_player, tones):
+    player, log = make_player()
+    player.load_queue(queue_of(tones, [30]))
+    started = log.wait_for(playing("T0"))
+    assert filters(player) == []
+
+    player.set_mono(True)
+    (mono,) = filters(player)
+    assert mono["label"] == "mono" and "pan=stereo" in mono["params"]["graph"]
+    time.sleep(0.3)
+    assert log.bus.current.status is PlayerStatus.PLAYING  # the song plays on, mixed
+    player.set_mono(True)  # setting it twice is setting it once
+    assert len(filters(player)) == 1
+
+    os.kill(player._process.pid, signal.SIGKILL)
+    error = log.wait_for(lambda s: s.status is PlayerStatus.ERROR, after=started.version)
+    log.wait_for(lambda s: s.status is PlayerStatus.IDLE, after=error.version)
+    assert [f["label"] for f in filters(player)] == ["mono"]  # the new mpv starts mixed
+
+    player.set_mono(False)
+    assert filters(player) == []
+    player.load_queue(queue_of(tones, [5]))
+    log.wait_for(playing("T0"), after=error.version)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+def test_mono_puts_one_sided_sound_in_both_ears(runtime):
+    """What mpv writes out with mono on is the same on both sides."""
+    left_only, written = runtime / "left.wav", runtime / "out.wav"
+    subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "sine=f=440:d=1",
+         "-af", "pan=stereo|c0=c0|c1=0*c0", str(left_only)],
+        check=True,
+    )  # fmt: skip
+    player = MpvPlayer(StateBus(), socket_path=runtime / "mpv.sock")
+    player._mono = True  # as a restart after set_mono(True) would start it
+    args = [a for a in player.command_line() if not a.startswith(("--idle", "--input-ipc"))]
+    subprocess.run(
+        [*args, "--ao=pcm", f"--ao-pcm-file={written}", str(left_only)], check=True, timeout=20
+    )
+    with wave.open(str(written)) as out:
+        assert out.getnchannels() == 2
+        samples = memoryview(out.readframes(out.getnframes())).cast("h")
+    left, right = samples[0::2], samples[1::2]
+    assert max(abs(sample) for sample in left) > 1000  # there is sound, not silence
+    assert left.tolist() == right.tolist()

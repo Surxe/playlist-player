@@ -66,6 +66,13 @@ class Player(Protocol):
         """
         ...
 
+    def set_mono(self, on: bool) -> None:
+        """Mix the sound down so that both ears hear the same thing, or stop doing so.
+
+        It holds until set again, across songs, and applies to what is playing at once.
+        """
+        ...
+
     def set_offset(self, track_id: str, offset_ms: int) -> None:
         """Tell the player a track's lyric offset changed, so the next snapshot carries it."""
         ...
