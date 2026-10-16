@@ -7,10 +7,10 @@ import time
 
 import pytest
 
-from playlist_player.models import LyricsKind, PlaybackState, PlayerStatus
-from playlist_player.playback.queue import PlayQueue, QueueEntry
-from playlist_player.playback.reducer import MpvStateReducer
-from playlist_player.playback.state import StateBus
+from spotifixed.models import LyricsKind, PlaybackState, PlayerStatus
+from spotifixed.playback.queue import PlayQueue, QueueEntry
+from spotifixed.playback.reducer import MpvStateReducer
+from spotifixed.playback.state import StateBus
 
 
 def entries(count: int) -> list[QueueEntry]:

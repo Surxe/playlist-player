@@ -134,7 +134,7 @@ class MpvPlayer:
             "--ytdl=no",
             "--no-input-default-bindings",
             "--audio-display=no",
-            "--audio-client-name=playlist-player",
+            "--audio-client-name=spotifixed",
             f"--input-ipc-server={self._socket_path}",
         ]
         if self._audio_output:
@@ -366,7 +366,7 @@ class MpvPlayer:
                 self._command("set_property", "volume-gain", _FADE_FLOOR_DB)
             except MpvCommandError as exc:
                 # An mpv older than 0.37 has no volume-gain. Play on without the fade.
-                print(f"playlist_player: no fade-in with this mpv: {exc}", file=sys.stderr)
+                print(f"spotifixed: no fade-in with this mpv: {exc}", file=sys.stderr)
                 self._fade_len = 0.0
                 return
             except PlaybackError:

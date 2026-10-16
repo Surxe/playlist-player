@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player.errors import PlaybackError
-from playlist_player.playback.mpv_ipc import MpvCommandError, MpvIpc
+from spotifixed.errors import PlaybackError
+from spotifixed.playback.mpv_ipc import MpvCommandError, MpvIpc
 
 
 class Peer:

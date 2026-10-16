@@ -234,17 +234,17 @@ def _validate(s: Settings) -> None:
         loopback = False
     if not loopback:
         raise ConfigError(
-            f"PLAYLIST_PLAYER_HOST must be a loopback address, got {s.host!r}. The daemon "
+            f"SPOTIFIXED_HOST must be a loopback address, got {s.host!r}. The daemon "
             "has no authentication and is not meant to be reachable from the network."
         )
     if not 1 <= s.port <= 65535:
-        raise ConfigError(f"PLAYLIST_PLAYER_PORT must be 1-65535, got {s.port}")
+        raise ConfigError(f"SPOTIFIXED_PORT must be 1-65535, got {s.port}")
     if s.sync_workers < 1:
-        raise ConfigError(f"PLAYLIST_PLAYER_SYNC_WORKERS must be at least 1, got {s.sync_workers}")
+        raise ConfigError(f"SPOTIFIXED_SYNC_WORKERS must be at least 1, got {s.sync_workers}")
     if s.audio_duration_reject_s < s.audio_duration_tolerance_s:
         raise ConfigError(
-            "PLAYLIST_PLAYER_AUDIO_DURATION_REJECT_S must not be smaller than "
-            "PLAYLIST_PLAYER_AUDIO_DURATION_TOLERANCE_S"
+            "SPOTIFIXED_AUDIO_DURATION_REJECT_S must not be smaller than "
+            "SPOTIFIXED_AUDIO_DURATION_TOLERANCE_S"
         )
     if s.overlay_lines not in (1, 2):
-        raise ConfigError(f"PLAYLIST_PLAYER_OVERLAY_LINES must be 1 or 2, got {s.overlay_lines}")
+        raise ConfigError(f"SPOTIFIXED_OVERLAY_LINES must be 1 or 2, got {s.overlay_lines}")

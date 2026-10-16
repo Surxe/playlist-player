@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player.lyrics import aligned_word, current_word, parse_lrc, word_ends, word_ranges
-from playlist_player.lyrics.words import SLACK, syllables
-from playlist_player.models import LyricLine
+from spotifixed.lyrics import aligned_word, current_word, parse_lrc, word_ends, word_ranges
+from spotifixed.lyrics.words import SLACK, syllables
+from spotifixed.models import LyricLine
 
 TABLE = json.loads((Path(__file__).parent.parent / "fixtures" / "word_cases.json").read_text())
 

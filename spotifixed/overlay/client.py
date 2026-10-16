@@ -25,7 +25,7 @@ from .presenter import OverlayModel
 
 EVENTS_PATH = "/api/v1/events"
 # Tells the daemon this stream is an overlay, so the page can say whether one is running.
-CLIENT_HEADER = {"X-Playlist-Player-Client": "overlay"}
+CLIENT_HEADER = {"X-Spotifixed-Client": "overlay"}
 # The daemon sends a keepalive comment every 15 s; silence much longer than that means
 # the connection is dead even though nothing closed it.
 READ_TIMEOUT_S = 40.0
@@ -126,7 +126,7 @@ class DaemonClient:
                         except Exception as exc:
                             # Settings that cannot be applied must not end this thread:
                             # it is also what keeps the lyrics following playback.
-                            print(f"playlist_player: overlay settings: {exc}", file=sys.stderr)
+                            print(f"spotifixed: overlay settings: {exc}", file=sys.stderr)
                         self._on_change()
         finally:
             self._socket = None

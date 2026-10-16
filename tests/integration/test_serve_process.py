@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player.cache import CacheStore
-from playlist_player.config import REPO_ROOT
+from spotifixed.cache import CacheStore
+from spotifixed.config import REPO_ROOT
 from tests.support.audio import tone
 from tests.support.library import PLAYLIST_ID, build_library
 
@@ -44,20 +44,20 @@ class Serve:
         extra_env: dict[str, str] | None = None,
     ) -> None:
         self.store, self.port = store, port
-        env = {k: v for k, v in os.environ.items() if not k.startswith("PLAYLIST_PLAYER_")}
+        env = {k: v for k, v in os.environ.items() if not k.startswith("SPOTIFIXED_")}
         env.pop("APIFY_TOKEN", None)
         env.update(
             PYTHONPATH=str(REPO_ROOT),
             XDG_RUNTIME_DIR=str(runtime),
-            PLAYLIST_PLAYER_CACHE_DIR=str(store.cache_dir),
-            PLAYLIST_PLAYER_STATE_DIR=str(store.state_dir),
-            PLAYLIST_PLAYER_PORT=str(port),
-            PLAYLIST_PLAYER_MPV_AUDIO_OUTPUT="null",
+            SPOTIFIXED_CACHE_DIR=str(store.cache_dir),
+            SPOTIFIXED_STATE_DIR=str(store.state_dir),
+            SPOTIFIXED_PORT=str(port),
+            SPOTIFIXED_MPV_AUDIO_OUTPUT="null",
             **(extra_env or {}),
         )
-        self.socket_path = runtime / "playlist-player" / f"mpv-{port}.sock"
+        self.socket_path = runtime / "spotifixed" / f"mpv-{port}.sock"
         self.process = subprocess.Popen(
-            [sys.executable, "-m", "playlist_player", *command],
+            [sys.executable, "-m", "spotifixed", *command],
             cwd=runtime, env=env, start_new_session=True,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )  # fmt: skip
@@ -110,7 +110,7 @@ class Serve:
         listing = subprocess.run(
             ["ps", "-ww", "-eo", "pid=,args="], capture_output=True, text=True, check=True
         ).stdout
-        marker = f"-m playlist_player overlay --port {self.port}"
+        marker = f"-m spotifixed overlay --port {self.port}"
         return [int(line.split()[0]) for line in listing.splitlines() if marker in line]
 
     def signal_group(self, number: int) -> int:
@@ -289,6 +289,6 @@ def test_start_carries_on_without_an_overlay_that_cannot_run_and_stops_like_serv
     assert run.signal_group(signal.SIGHUP) == 0
     assert run.mpv_pids() == []
     assert run.output.count("the overlay stopped (exit status 1)") == 1
-    assert "closing this terminal, stops playlist-player" in run.output
+    assert "closing this terminal, stops spotifixed" in run.output
     assert "Traceback" not in run.output
     assert saved(store)["track_id"] == "TRK0001"

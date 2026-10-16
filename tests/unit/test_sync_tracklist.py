@@ -6,13 +6,13 @@ import json
 
 import pytest
 
-from playlist_player.errors import ConfigError, SourceError
-from playlist_player.http import HttpClient
-from playlist_player.models import Playlist, Track
-from playlist_player.sources.tracklist import build_tracklist_source
-from playlist_player.sources.tracklist.apify_spotify import ACTOR
-from playlist_player.sync import report
-from playlist_player.sync.tracklist import load_tracklist, tracklist_is_cached
+from spotifixed.errors import ConfigError, SourceError
+from spotifixed.http import HttpClient
+from spotifixed.models import Playlist, Track
+from spotifixed.sources.tracklist import build_tracklist_source
+from spotifixed.sources.tracklist.apify_spotify import ACTOR
+from spotifixed.sync import report
+from spotifixed.sync.tracklist import load_tracklist, tracklist_is_cached
 from tests.support.tracklists import PLAYLIST_ID, response
 
 

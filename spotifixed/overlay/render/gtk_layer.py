@@ -36,7 +36,7 @@ from ...errors import PlaylistPlayerError  # noqa: E402
 from ..presenter import OverlayView  # noqa: E402
 from .base import Placement, Style, ViewSource  # noqa: E402
 
-NAMESPACE = "playlist-player-lyrics"
+NAMESPACE = "spotifixed-lyrics"
 TICK_MS = 30
 # Room around the text so the outline and its soft shadow are not clipped by the surface.
 _PADDING_PX = 14
@@ -86,7 +86,7 @@ class GtkLayerRenderer:
         self._box.append(self._next)
 
         self._window = Gtk.Window()
-        self._window.add_css_class("playlist-player-overlay")
+        self._window.add_css_class("spotifixed-overlay")
         self._window.set_decorated(False)
         self._window.set_child(self._box)
         self._window.connect("map", self._on_map)
@@ -101,8 +101,8 @@ class GtkLayerRenderer:
         style = self._style
         o = style.outline_color
         css = (
-            "window.playlist-player-overlay { background: transparent; }\n"
-            f"window.playlist-player-overlay label {{ color: {style.color}; "
+            "window.spotifixed-overlay { background: transparent; }\n"
+            f"window.spotifixed-overlay label {{ color: {style.color}; "
             # Eight hard offsets make a solid outline; the blurred one softens its edge.
             f"text-shadow: -2px -2px 0 {o}, 2px -2px 0 {o}, -2px 2px 0 {o}, 2px 2px 0 {o}, "
             f"0 -2px 0 {o}, 0 2px 0 {o}, -2px 0 0 {o}, 2px 0 0 {o}, 0 0 6px {o}; }}\n"
@@ -178,7 +178,7 @@ class GtkLayerRenderer:
         if self._monitor_name and found is None:
             names = ", ".join(self.monitor_names()) or "none"
             print(
-                f"playlist_player: no monitor named {self._monitor_name!r} (found: {names}); "
+                f"spotifixed: no monitor named {self._monitor_name!r} (found: {names}); "
                 "leaving the choice to the compositor",
                 file=sys.stderr,
             )
@@ -201,7 +201,7 @@ class GtkLayerRenderer:
             # hash() of a PyGObject wrapper is the address of the object it wraps.
             library.gtk_layer_set_monitor(hash(self._window), None)
         except (OSError, AttributeError) as exc:
-            print(f"playlist_player: could not release the monitor: {exc}", file=sys.stderr)
+            print(f"spotifixed: could not release the monitor: {exc}", file=sys.stderr)
 
     @staticmethod
     def monitor_names() -> list[str]:

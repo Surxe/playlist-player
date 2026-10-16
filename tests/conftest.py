@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from playlist_player.cache import CacheStore
+from spotifixed.cache import CacheStore
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def _isolated_settings(monkeypatch, tmp_path):
     import os
 
     for name in list(os.environ):
-        if name.startswith("PLAYLIST_PLAYER_") or name == "APIFY_TOKEN":
+        if name.startswith("SPOTIFIXED_") or name == "APIFY_TOKEN":
             monkeypatch.delenv(name)
     monkeypatch.chdir(tmp_path)  # a .env in the working directory is read as settings
 

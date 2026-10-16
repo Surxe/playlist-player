@@ -8,15 +8,15 @@ import subprocess
 
 import pytest
 
-from playlist_player import cli
-from playlist_player.cache import MissLog, assets
-from playlist_player.errors import PlaylistPlayerError, SourceError
-from playlist_player.models import LyricsInfo, LyricsKind, Track, TrackState
-from playlist_player.sources.audio import media
-from playlist_player.sync.audio import AudioStage
-from playlist_player.sync.pin import pin_audio
-from playlist_player.sync.pipeline import Pipeline
-from playlist_player.sync.stages import Outcome
+from spotifixed import cli
+from spotifixed.cache import MissLog, assets
+from spotifixed.errors import PlaylistPlayerError, SourceError
+from spotifixed.models import LyricsInfo, LyricsKind, Track, TrackState
+from spotifixed.sources.audio import media
+from spotifixed.sync.audio import AudioStage
+from spotifixed.sync.pin import pin_audio
+from spotifixed.sync.pipeline import Pipeline
+from spotifixed.sync.stages import Outcome
 from tests.support.audio import FakeAudioSource, candidate, make_tone
 
 TRACK = Track(
@@ -266,8 +266,8 @@ def test_pin_command_rebuilds_audio_and_lyrics_against_the_pinned_audio(
     misses = MissLog(store)
     misses.record(TRACK.id, "lyrics", "plain_only")
 
-    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
-    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+    monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
     pin = "https://video.invalid/watch?v=mine"
     assert cli.main(["pin", TRACK.id, pin]) == 0
 

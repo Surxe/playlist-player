@@ -7,11 +7,11 @@ import threading
 
 import pytest
 
-from playlist_player.config import load_settings
-from playlist_player.errors import ConfigError
-from playlist_player.overlay.main import LiveSettings, placement_and_style
-from playlist_player.overlay.presenter import OverlayModel
-from playlist_player.overlay_settings import (
+from spotifixed.config import load_settings
+from spotifixed.errors import ConfigError
+from spotifixed.overlay.main import LiveSettings, placement_and_style
+from spotifixed.overlay.presenter import OverlayModel
+from spotifixed.overlay_settings import (
     RULES,
     OverlaySettingError,
     OverlaySettings,
@@ -20,7 +20,7 @@ from playlist_player.overlay_settings import (
     prune,
     salvage,
 )
-from playlist_player.server.overlay_config import OverlayConfig
+from spotifixed.server.overlay_config import OverlayConfig
 
 
 @pytest.fixture
@@ -35,7 +35,7 @@ def test_every_overlay_option_in_the_schema_is_adjustable_and_named(defaults):
     settings = load_settings()
     overlay_fields = {name for name in type(settings).__slots__ if name.startswith("overlay_")}
     assert {f"overlay_{key}" for key in RULES} == overlay_fields
-    assert env_name("margin_y") == "PLAYLIST_PLAYER_OVERLAY_MARGIN_Y"
+    assert env_name("margin_y") == "SPOTIFIXED_OVERLAY_MARGIN_Y"
     assert defaults.margin_y == 120 and defaults.anchor == "bottom" and defaults.font == "Sans Bold"
     assert defaults.underline_word is False  # an estimate: on only when asked for
 
@@ -85,14 +85,14 @@ def test_values_a_setting_refuses(key, value, says):
 @pytest.mark.parametrize(
     ("name", "value", "says"),
     [
-        ("OVERLAY_COLOR", "red; }", "PLAYLIST_PLAYER_OVERLAY_COLOR must be a colour"),
-        ("OVERLAY_FONT_SIZE", "0", "PLAYLIST_PLAYER_OVERLAY_FONT_SIZE must be a whole number"),
-        ("OVERLAY_FONT", "Sans $(id)", "PLAYLIST_PLAYER_OVERLAY_FONT must be a font name"),
-        ("OVERLAY_MARGIN_Y", "99999", "PLAYLIST_PLAYER_OVERLAY_MARGIN_Y must be"),
+        ("OVERLAY_COLOR", "red; }", "SPOTIFIXED_OVERLAY_COLOR must be a colour"),
+        ("OVERLAY_FONT_SIZE", "0", "SPOTIFIXED_OVERLAY_FONT_SIZE must be a whole number"),
+        ("OVERLAY_FONT", "Sans $(id)", "SPOTIFIXED_OVERLAY_FONT must be a font name"),
+        ("OVERLAY_MARGIN_Y", "99999", "SPOTIFIXED_OVERLAY_MARGIN_Y must be"),
     ],
 )
 def test_a_bad_configured_value_fails_naming_its_variable(monkeypatch, name, value, says):
-    monkeypatch.setenv(f"PLAYLIST_PLAYER_{name}", value)
+    monkeypatch.setenv(f"SPOTIFIXED_{name}", value)
     with pytest.raises(ConfigError, match=says):
         OverlaySettings.from_settings(load_settings())
 

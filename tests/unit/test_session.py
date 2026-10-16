@@ -8,13 +8,13 @@ import threading
 
 import pytest
 
-from playlist_player.cache import assets
-from playlist_player.config import load_settings
-from playlist_player.errors import NotInCacheError, PlaybackError
-from playlist_player.models import PlaybackState, PlayerStatus
-from playlist_player.server.app import Daemon
-from playlist_player.server.library import Library
-from playlist_player.server.session import PlaybackSession, SettingError
+from spotifixed.cache import assets
+from spotifixed.config import load_settings
+from spotifixed.errors import NotInCacheError, PlaybackError
+from spotifixed.models import PlaybackState, PlayerStatus
+from spotifixed.server.app import Daemon
+from spotifixed.server.library import Library
+from spotifixed.server.session import PlaybackSession, SettingError
 from tests.support.library import PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer
 
@@ -281,8 +281,8 @@ def test_a_damaged_session_file_starts_with_nothing_remembered(store, library, c
 
 
 def test_a_daemon_that_stops_and_starts_again_plays_where_it_was(store, monkeypatch):
-    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
-    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+    monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
     build_library(store)
     settings = load_settings()
 

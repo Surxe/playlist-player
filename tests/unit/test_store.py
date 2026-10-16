@@ -7,8 +7,8 @@ import stat
 
 import pytest
 
-from playlist_player.cache import CacheStore, atomic_write_bytes, validate_id
-from playlist_player.errors import CacheError, InvalidIdError
+from spotifixed.cache import CacheStore, atomic_write_bytes, validate_id
+from spotifixed.errors import CacheError, InvalidIdError
 
 
 @pytest.mark.parametrize(

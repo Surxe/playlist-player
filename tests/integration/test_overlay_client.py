@@ -12,11 +12,11 @@ import time
 
 import pytest
 
-from playlist_player.config import load_settings
-from playlist_player.overlay.client import DaemonClient
-from playlist_player.overlay.clock import now_epoch_ms
-from playlist_player.overlay.presenter import OverlayModel
-from playlist_player.server.app import Daemon
+from spotifixed.config import load_settings
+from spotifixed.overlay.client import DaemonClient
+from spotifixed.overlay.clock import now_epoch_ms
+from spotifixed.overlay.presenter import OverlayModel
+from spotifixed.server.app import Daemon
 from tests.support.library import PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer
 
@@ -36,8 +36,8 @@ def wait_until(predicate, timeout=5.0, message="condition not met in time"):
 
 class Harness:
     def __init__(self, store, monkeypatch):
-        monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
-        monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+        monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+        monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
         build_library(store)
         self.store = store
         self.settings = load_settings()

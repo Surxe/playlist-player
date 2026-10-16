@@ -7,15 +7,15 @@ import random
 
 import pytest
 
-from playlist_player.cache import assets
-from playlist_player.config import load_settings
-from playlist_player.errors import PlaybackError
-from playlist_player.overlay_settings import OverlaySettings
-from playlist_player.server.library import Library
-from playlist_player.server.overlay_config import OverlayConfig
-from playlist_player.server.routes import API, Routes
-from playlist_player.server.security import allowed_hosts, check_request
-from playlist_player.server.session import PlaybackSession
+from spotifixed.cache import assets
+from spotifixed.config import load_settings
+from spotifixed.errors import PlaybackError
+from spotifixed.overlay_settings import OverlaySettings
+from spotifixed.server.library import Library
+from spotifixed.server.overlay_config import OverlayConfig
+from spotifixed.server.routes import API, Routes
+from spotifixed.server.security import allowed_hosts, check_request
+from spotifixed.server.session import PlaybackSession
 from tests.support.library import JPEG, PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer
 
@@ -217,7 +217,7 @@ def test_the_page_is_the_one_this_process_started_with(routes, monkeypatch, tmp_
 
     The newer page would call endpoints this process does not have.
     """
-    from playlist_player.server import routes as routes_module
+    from spotifixed.server import routes as routes_module
 
     before = routes.dispatch("GET", "/static/app.js").body
     replaced = tmp_path / "static"

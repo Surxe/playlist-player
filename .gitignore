@@ -1,5 +1,5 @@
 # Data and scratch directories are anchored to the repo root with a leading slash. An
-# unanchored `cache/` also matches the source package playlist_player/cache/ and silently
+# unanchored `cache/` also matches the source package spotifixed/cache/ and silently
 # keeps it out of commits.
 
 # Planning notes for the agent building this repo. Local working documents, not source.

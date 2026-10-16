@@ -1,5 +1,5 @@
 [project]
-name = "playlist-player"
+name = "spotifixed"
 version = "0.1.0"
 description = "Cache a Spotify playlist's audio and time-synced lyrics, play it through mpv, and show the current lyric line in an overlay."
 requires-python = ">=3.11"
@@ -8,7 +8,7 @@ license = "MIT"
 [tool.optionsconfig]
 # The settings schema lives in the package; build.py reads these paths to regenerate
 # .env.example and the README's Configuration section from it.
-schema_module = "playlist_player.options_schema"
+schema_module = "spotifixed.options_schema"
 env_example_path = ".env.example"
 readme_path = "README.md"
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player.lyrics import current_index, line_times, parse_lrc
+from spotifixed.lyrics import current_index, line_times, parse_lrc
 
 CASES = json.loads((Path(__file__).parent.parent / "fixtures" / "timeline_cases.json").read_text())[
     "cases"

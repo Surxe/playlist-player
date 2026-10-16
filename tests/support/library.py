@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from playlist_player.cache import CacheStore, assets
-from playlist_player.models import AudioAsset, LyricsInfo, LyricsKind, Playlist, Track
+from spotifixed.cache import CacheStore, assets
+from spotifixed.models import AudioAsset, LyricsInfo, LyricsKind, Playlist, Track
 
 PLAYLIST_ID = "PLsynthetic0000000001"
 JPEG = b"\xff\xd8\xff\xe0" + b"synthetic image bytes"

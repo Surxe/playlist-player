@@ -12,8 +12,8 @@ import subprocess
 
 import pytest
 
-from playlist_player.config import REPO_ROOT
-from playlist_player.models import PlaybackState, PlayerStatus
+from spotifixed.config import REPO_ROOT
+from spotifixed.models import PlaybackState, PlayerStatus
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

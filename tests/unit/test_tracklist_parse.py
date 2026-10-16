@@ -6,10 +6,10 @@ import json
 
 import pytest
 
-from playlist_player.errors import SourceError
-from playlist_player.http import HttpClient
-from playlist_player.sources.tracklist import build_tracklist_source, source_names
-from playlist_player.sources.tracklist.apify_spotify import ACTOR, ApifySpotifySource
+from spotifixed.errors import SourceError
+from spotifixed.http import HttpClient
+from spotifixed.sources.tracklist import build_tracklist_source, source_names
+from spotifixed.sources.tracklist.apify_spotify import ACTOR, ApifySpotifySource
 from tests.support.tracklists import PLAYLIST_ID, playlist_row, response, track_item
 
 

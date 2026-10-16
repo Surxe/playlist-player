@@ -8,20 +8,20 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player import cli
-from playlist_player.cache import MissLog, assets
-from playlist_player.http import HttpClient
-from playlist_player.models import LyricsKind
-from playlist_player.sources.lyrics import LrclibSource
-from playlist_player.sources.tracklist import build_tracklist_source
-from playlist_player.sources.tracklist.apify_spotify import ACTOR
-from playlist_player.sync import report
-from playlist_player.sync.audio import AudioStage
-from playlist_player.sync.cover import CoverStage, fetch_playlist_cover
-from playlist_player.sync.lyrics import LyricsStage
-from playlist_player.sync.pipeline import Pipeline
-from playlist_player.sync.stages import Outcome
-from playlist_player.sync.tracklist import load_tracklist
+from spotifixed import cli
+from spotifixed.cache import MissLog, assets
+from spotifixed.http import HttpClient
+from spotifixed.models import LyricsKind
+from spotifixed.sources.lyrics import LrclibSource
+from spotifixed.sources.tracklist import build_tracklist_source
+from spotifixed.sources.tracklist.apify_spotify import ACTOR
+from spotifixed.sync import report
+from spotifixed.sync.audio import AudioStage
+from spotifixed.sync.cover import CoverStage, fetch_playlist_cover
+from spotifixed.sync.lyrics import LyricsStage
+from spotifixed.sync.pipeline import Pipeline
+from spotifixed.sync.stages import Outcome
+from spotifixed.sync.tracklist import load_tracklist
 from tests.support.audio import FakeAudioSource, candidate
 from tests.support.lrclib import api_record
 from tests.support.tracklists import PLAYLIST_ID, playlist_row, track_item
@@ -269,8 +269,8 @@ def test_status_reports_the_synced_playlist_without_lyric_text(world, store, mon
     assets.write_track_state(store, "TRK0000", assets.TrackState(offset_ms=-150))
     # The miss log is shared by every playlist: another playlist's review is not this one's.
     MissLog(store).record("ElsewhereTrack", "audio", "needs_review", detail=[])
-    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
-    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+    monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
 
     assert cli.main(["status"]) == 0
     listing = capsys.readouterr().out

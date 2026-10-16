@@ -1,4 +1,4 @@
-"""Command-line entry point: ``python -m playlist_player <command>``.
+"""Command-line entry point: ``python -m spotifixed <command>``.
 
 This module only parses arguments and wires objects together. Each command's work lives
 in the package it belongs to, imported inside the handler so that, for example, ``sync``
@@ -80,7 +80,7 @@ def _cmd_sync(args: argparse.Namespace, settings: Settings) -> int:
     print("\n".join(report.tracklist_summary(result)))
     warning = report.shortfall_warning(result)
     if warning:
-        print(f"playlist_player: {warning}", file=sys.stderr)
+        print(f"spotifixed: {warning}", file=sys.stderr)
     status = _INCOMPLETE if warning else 0
     if args.only == "tracklist":
         return status
@@ -242,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_settings_arguments(common.add_argument_group("settings"))
 
     parser = argparse.ArgumentParser(
-        prog="playlist_player",
+        prog="spotifixed",
         description=(
             "Cache a Spotify playlist's audio and synced lyrics, play it, and overlay the lyrics."
         ),
@@ -318,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
         settings = load_settings(args)
         return args.handler(args, settings)
     except PlaylistPlayerError as exc:
-        print(f"playlist_player: {exc}", file=sys.stderr)
+        print(f"spotifixed: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         return 130

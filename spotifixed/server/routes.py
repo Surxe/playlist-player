@@ -30,7 +30,7 @@ from .session import PlaybackSession, SettingError
 API = "/api/v1"
 EVENTS_PATH = f"{API}/events"
 # Sent by the overlay when it opens the event stream.
-OVERLAY_CLIENT_HEADER = "X-Playlist-Player-Client"
+OVERLAY_CLIENT_HEADER = "X-Spotifixed-Client"
 MAX_BODY_BYTES = 64 * 1024
 
 _STATIC_DIR = Path(__file__).parent / "static"

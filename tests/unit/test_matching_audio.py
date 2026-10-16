@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player.models import Track
-from playlist_player.sync.matching import (
+from spotifixed.models import Track
+from spotifixed.sync.matching import (
     AUDIO_REVIEW_THRESHOLD,
     is_album_audio,
     rank_audio,

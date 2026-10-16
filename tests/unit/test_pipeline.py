@@ -7,12 +7,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from playlist_player.cache import MissLog
-from playlist_player.errors import SourceError
-from playlist_player.models import Track
-from playlist_player.sync import report
-from playlist_player.sync.pipeline import Pipeline
-from playlist_player.sync.stages import Outcome, StageResult
+from spotifixed.cache import MissLog
+from spotifixed.errors import SourceError
+from spotifixed.models import Track
+from spotifixed.sync import report
+from spotifixed.sync.pipeline import Pipeline
+from spotifixed.sync.stages import Outcome, StageResult
 
 
 def tracks(count: int) -> list[Track]:

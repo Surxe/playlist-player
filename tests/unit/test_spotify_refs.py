@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from playlist_player.errors import InvalidIdError
-from playlist_player.sources.tracklist import playlist_id_from, playlist_url
+from spotifixed.errors import InvalidIdError
+from spotifixed.sources.tracklist import playlist_id_from, playlist_url
 
 ID = "AbCdEfGhIjKlMnOpQrStUv"
 

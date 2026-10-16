@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# prereq-check.sh -- report whether everything playlist-player needs from outside the
+# prereq-check.sh -- report whether everything spotifixed needs from outside the
 # repo is installed.
 #
 #   scripts/prereq-check.sh
@@ -10,7 +10,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PY="${PLAYLIST_PLAYER_PYTHON:-$REPO_ROOT/.venv/bin/python}"
+PY="${SPOTIFIXED_PYTHON:-$REPO_ROOT/.venv/bin/python}"
 failures=0
 
 check() { # check <required|optional> <label> <purpose> <command...>
@@ -68,7 +68,7 @@ check required "ffprobe" "sync: measuring downloaded audio" first_line ffprobe -
 check required "yt-dlp (virtualenv)" "sync: downloading audio" ytdlp
 check required "mpv" "serve: playback" first_line mpv --version
 check optional "deno or node" "yt-dlp extracts more reliably with a JavaScript runtime" javascript_runtime
-check optional "mpv MPRIS plugin" "keyboard media keys (set PLAYLIST_PLAYER_MPV_MPRIS_PLUGIN)" mpris_plugin
+check optional "mpv MPRIS plugin" "keyboard media keys (set SPOTIFIXED_MPV_MPRIS_PLUGIN)" mpris_plugin
 check optional "gtk4-layer-shell bindings" "the lyric overlay" layer_shell
 check optional "pytest (virtualenv)" "running the tests" venv_module pytest
 check optional "optionsconfig (virtualenv)" "build.py, which regenerates the settings docs" venv_module optionsconfig

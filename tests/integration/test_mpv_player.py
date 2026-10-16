@@ -16,12 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player.errors import PlaybackError
-from playlist_player.models import LyricsKind, PlayerStatus
-from playlist_player.playback.mpv import MpvPlayer
-from playlist_player.playback.mpv_ipc import MpvCommandError
-from playlist_player.playback.queue import PlayQueue, QueueEntry
-from playlist_player.playback.state import StateBus
+from spotifixed.errors import PlaybackError
+from spotifixed.models import LyricsKind, PlayerStatus
+from spotifixed.playback.mpv import MpvPlayer
+from spotifixed.playback.mpv_ipc import MpvCommandError
+from spotifixed.playback.queue import PlayQueue, QueueEntry
+from spotifixed.playback.state import StateBus
 from tests.support.audio import tone
 from tests.support.playback import StateLog
 

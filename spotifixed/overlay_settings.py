@@ -1,7 +1,7 @@
 """The overlay's adjustable settings as one value, with the rules each must obey.
 
 Two programs need the same rules. The overlay takes its starting values from
-:class:`~playlist_player.config.Settings`, and the daemon accepts changes to them from
+:class:`~spotifixed.config.Settings`, and the daemon accepts changes to them from
 the remote-control page while the overlay is running. Both go through :func:`clean`, so
 a value the page may send is exactly a value the overlay could have been started with.
 

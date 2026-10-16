@@ -11,9 +11,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import playlist_player
+import spotifixed
 
-PACKAGE = Path(playlist_player.__file__).parent
+PACKAGE = Path(spotifixed.__file__).parent
 
 LAYERS: dict[str, int] = {
     "models": 0, "errors": 0, "options_schema": 0,
@@ -46,13 +46,13 @@ def _imported_units(path: Path) -> set[str]:
                     found.add(target[0])
                 else:  # "from . import x" at the package root names units directly
                     found.update(alias.name for alias in node.names)
-            elif node.module and node.module.split(".")[0] == "playlist_player":
+            elif node.module and node.module.split(".")[0] == "spotifixed":
                 parts = node.module.split(".")
                 found.update([parts[1]] if len(parts) > 1 else [a.name for a in node.names])
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 parts = alias.name.split(".")
-                if parts[0] == "playlist_player" and len(parts) > 1:
+                if parts[0] == "spotifixed" and len(parts) > 1:
                     found.add(parts[1])
     return found
 
@@ -97,7 +97,7 @@ def test_the_guard_actually_detects_a_violation(tmp_path, monkeypatch):
     fake = tmp_path / "pkg"
     (fake / "cache").mkdir(parents=True)
     (fake / "cache" / "bad.py").write_text(
-        "from ..sync import pipeline\nfrom playlist_player.cli import main\n"
+        "from ..sync import pipeline\nfrom spotifixed.cli import main\n"
     )
     monkeypatch.setattr(f"{__name__}.PACKAGE", fake)
     assert _imported_units(fake / "cache" / "bad.py") == {"sync", "cli"}

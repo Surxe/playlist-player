@@ -15,7 +15,7 @@ import {
   syllables,
   wordEnds,
   wordRanges,
-} from "../../playlist_player/server/static/clock.js";
+} from "../../spotifixed/server/static/clock.js";
 
 const table = JSON.parse(
   readFileSync(new URL("../fixtures/timeline_cases.json", import.meta.url), "utf8"),

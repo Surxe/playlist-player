@@ -16,12 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from playlist_player import cli
-from playlist_player.cache import assets
-from playlist_player.config import load_settings
-from playlist_player.playback.mpv import MpvPlayer
-from playlist_player.playback.state import StateBus
-from playlist_player.server.app import Daemon
+from spotifixed import cli
+from spotifixed.cache import assets
+from spotifixed.config import load_settings
+from spotifixed.playback.mpv import MpvPlayer
+from spotifixed.playback.state import StateBus
+from spotifixed.server.app import Daemon
 from tests.support.audio import tone
 from tests.support.library import PLAYLIST_ID, build_library
 from tests.support.playback import FakePlayer, StateLog
@@ -124,8 +124,8 @@ def wait_until(predicate, timeout=5.0):
 
 @pytest.fixture
 def settings(store, monkeypatch):
-    monkeypatch.setenv("PLAYLIST_PLAYER_CACHE_DIR", str(store.cache_dir))
-    monkeypatch.setenv("PLAYLIST_PLAYER_STATE_DIR", str(store.state_dir))
+    monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
     return load_settings()
 
 
@@ -269,7 +269,7 @@ def test_event_stream_carries_the_overlay_settings_alongside_playback(fake):
         assert status == 200 and body["settings"]["anchor"] == "top"
         browser.wait(lambda: browser.overlay[-1]["settings"]["anchor"] == "top")
 
-        overlay = EventStream(daemon, {"X-Playlist-Player-Client": "overlay"})
+        overlay = EventStream(daemon, {"X-Spotifixed-Client": "overlay"})
         try:
             browser.wait(lambda: browser.overlay[-1]["clients"] == 1)
             # Playback events still arrive, and are not mistaken for settings.
@@ -332,7 +332,7 @@ def test_the_event_stream_refuses_a_foreign_origin(fake):
 @pytest.fixture
 def ctl(fake, monkeypatch):
     daemon, player, _ = fake
-    monkeypatch.setenv("PLAYLIST_PLAYER_PORT", str(daemon.port))
+    monkeypatch.setenv("SPOTIFIXED_PORT", str(daemon.port))
     return player
 
 
@@ -365,7 +365,7 @@ def test_ctl_reports_bad_values_and_refusals_in_one_line(ctl, capsys):
 
 
 def test_ctl_with_no_daemon_says_so(monkeypatch, capsys):
-    monkeypatch.setenv("PLAYLIST_PLAYER_PORT", "1")  # nothing listens there
+    monkeypatch.setenv("SPOTIFIXED_PORT", "1")  # nothing listens there
     assert cli.main(["ctl", "toggle"]) == 1
     assert "no daemon is answering at http://127.0.0.1:1" in capsys.readouterr().err
 
@@ -387,7 +387,7 @@ def test_a_playlist_plays_end_to_end_driven_by_ctl(start, store, tmp_path_factor
     try:
         daemon = start(player)
         client = Client(daemon)
-        monkeypatch.setenv("PLAYLIST_PLAYER_PORT", str(daemon.port))
+        monkeypatch.setenv("SPOTIFIXED_PORT", str(daemon.port))
         stream = EventStream(daemon)
 
         status, body = client.json("POST", "/api/v1/player/load", {"playlist_id": PLAYLIST_ID})
@@ -432,8 +432,8 @@ def test_serve_refuses_a_bad_overlay_setting_before_starting_mpv(monkeypatch, ca
     """The daemon holds the overlay's settings now, so it is the one to say they are wrong."""
     started = []
     monkeypatch.setattr(MpvPlayer, "start", lambda self: started.append(self))
-    monkeypatch.setenv("PLAYLIST_PLAYER_OVERLAY_COLOR", "red; }")
+    monkeypatch.setenv("SPOTIFIXED_OVERLAY_COLOR", "red; }")
     assert cli.main(["serve"]) == 1
     error = capsys.readouterr().err
-    assert "PLAYLIST_PLAYER_OVERLAY_COLOR must be a colour" in error and "Traceback" not in error
+    assert "SPOTIFIXED_OVERLAY_COLOR must be a colour" in error and "Traceback" not in error
     assert started == []
