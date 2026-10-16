@@ -18,13 +18,14 @@ beginning.
 Settings. The few settings of playback itself that are set from the page are kept here
 too. One is how long the sound takes to come up from silence each time playback is
 resumed after a pause, the paused song a start puts back included (``fade_in_s``; 0, the
-default, is no fade); it is handed to the player on start and again whenever it changes. The
-others say which tracks a playlist is made of: ``include_without_lyrics`` and
-``include_without_audio``, both on by default. With the first off, tracks that have no
-synced lyrics are neither listed nor queued; with the second off, tracks that have no
-audio (which are never queued) are not listed either. A change applies at once, to the
-queue that is playing too. Neither touches a kept order: a track that is left out keeps
-its place for when it is let back in.
+default, is no fade); it is handed to the player on start and again whenever it changes.
+``mono`` mixes the sound so that both ears hear the same; it is off by default, and is
+handed to the player the same way. The next two say which tracks a playlist is made of:
+``include_without_lyrics`` and ``include_without_audio``, both on by default. With the
+first off, tracks that have no synced lyrics are neither listed nor queued; with the
+second off, tracks that have no audio (which are never queued) are not listed either. A
+change applies at once, to the queue that is playing too. Neither touches a kept order:
+a track that is left out keeps its place for when it is let back in.
 
 The last two say what the remote-control page draws: ``show_lyrics`` (the lyric pane, with
 its progress bar and underline) and ``show_position`` (the elapsed time and seek slider),
@@ -62,6 +63,8 @@ TRACK_FILTERS = ("include_without_lyrics", "include_without_audio")
 # What the remote-control page draws. Both default to on; neither changes playback.
 PAGE_SWITCHES = ("show_lyrics", "show_position")
 SWITCHES = TRACK_FILTERS + PAGE_SWITCHES
+# Switches of the player itself. These default to off.
+PLAYER_SWITCHES = ("mono",)
 
 
 class SettingError(ValueError):
@@ -146,18 +149,23 @@ class PlaybackSession:
         """Whether a switch is on. Anything but a stored ``False`` is on."""
         return self._data["settings"].get(name) is not False
 
+    def _player_switch_on(self, name: str) -> bool:
+        """Whether a player switch is on. Only a stored ``True`` is on."""
+        return self._data["settings"].get(name) is True
+
     def _settings(self) -> dict[str, Any]:
         """Every setting as it is in force. Lock held."""
         return {
             "fade_in_s": self._fade_in_s(),
             **{name: self._switch_on(name) for name in SWITCHES},
+            **{name: self._player_switch_on(name) for name in PLAYER_SWITCHES},
         }
 
     def set_settings(self, changes: dict[str, Any]) -> dict[str, Any]:
         """Change playback settings. All of ``changes`` applies, or none of it does."""
         accepted: dict[str, Any] = {}
         for key, value in changes.items():
-            if key in SWITCHES:
+            if key in SWITCHES or key in PLAYER_SWITCHES:
                 if not isinstance(value, bool):
                     raise SettingError(f"{key} must be true or false; got {value!r}")
                 accepted[key] = value
@@ -178,8 +186,11 @@ class PlaybackSession:
                 self._save()
                 refiltered = any(before[name] != self._switch_on(name) for name in TRACK_FILTERS)
                 fade_in_s = self._fade_in_s()
+                mono = self._player_switch_on("mono")
             if "fade_in_s" in accepted:
                 self._set_fade_in(fade_in_s)
+            if "mono" in accepted:
+                self._set_mono(mono)
             playing = self._player.bus.current.playlist_id
             if refiltered and playing is not None:
                 try:
@@ -356,15 +367,24 @@ class PlaybackSession:
                 print(f"playlist_player: not resuming the last song: {exc}", file=sys.stderr)
         with self._lock:
             fade_in_s = self._fade_in_s()
+            mono = self._player_switch_on("mono")
             self._saving = True
         if fade_in_s > 0:
             self._set_fade_in(fade_in_s)
+        if mono:
+            self._set_mono(True)
 
     def _set_fade_in(self, seconds: float) -> None:
         try:
             self._player.set_fade_in(seconds)
         except PlaybackError as exc:
             print(f"playlist_player: no fade-in this time: {exc}", file=sys.stderr)
+
+    def _set_mono(self, on: bool) -> None:
+        try:
+            self._player.set_mono(on)
+        except PlaybackError as exc:
+            print(f"playlist_player: the mono setting is not in force: {exc}", file=sys.stderr)
 
     def _resume_position(self, saved: dict[str, Any], track_id: str) -> float | None:
         position = _number(saved.get("position_s"))

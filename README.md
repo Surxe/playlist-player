@@ -229,6 +229,12 @@ starts the next one from silence. Skipping between songs while playing does not 
 change applies at once. Your volume is not changed while it fades. It needs mpv 0.37 or
 newer; with an older mpv playback simply starts at full level.
 
+**Same sound in both ears** (also under **Settings**, off by default) plays in mono: both
+ears get the average of the left and right channels, so nothing panned to one side is
+lost with one earbud in or with hearing that is weaker on one side. The output stays
+two-channel, so it does not depend on how the sound server spreads a mono stream. A
+change applies at once, to the song that is playing too, and is kept across restarts.
+
 **Tracks** (also under **Settings**) chooses which tracks a playlist is made of. Both
 switches are on to begin with, so nothing is left out. With **Include tracks without
 synced lyrics** off, tracks that have no synced lyrics (plain text only, instrumental,
@@ -306,7 +312,7 @@ fullscreen.
 |------|-------|
 | `cache/` | Everything fetched: track lists, audio, lyrics, covers. Safe to delete; `sync` rebuilds it. |
 | `state/` | What you changed by hand: lyric offsets, audio pins, and overlay settings set from the page (with whether the overlay is switched on). Not rebuilt. |
-| `state/session.json` | Each shuffled playlist's order, and what the daemon resumes: the playlist, song, position and volume, with the settings made on the page (fade in, which tracks are included). Rewritten as playback changes; deleting it just starts fresh. |
+| `state/session.json` | Each shuffled playlist's order, and what the daemon resumes: the playlist, song, position and volume, with the settings made on the page (fade in, mono, which tracks are included). Rewritten as playback changes; deleting it just starts fresh. |
 
 Both are gitignored and sit in the repo by default; `PLAYLIST_PLAYER_CACHE_DIR` and
 `PLAYLIST_PLAYER_STATE_DIR` move them. Files get ordinary permissions, whatever your

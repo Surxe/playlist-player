@@ -457,6 +457,23 @@ def test_the_fade_in_setting_is_shown_and_saved_from_the_settings_pane(daemon, t
     assert daemon.session.document()["settings"]["fade_in_s"] == 6.5
 
 
+def test_the_mono_switch_is_off_to_begin_with_and_reaches_the_player(daemon, tmp_path):
+    results = drive(daemon, tmp_path, [
+        *OPEN,
+        {"wait": "t.el('playback-settings').textContent.includes('both ears')"},
+        {"eval": "t.el('mono').checked"},
+        {"eval": "t.el('mono').click()"},
+        {"wait": "t.el('mono').checked"},
+        {"eval": "t.pause(300)"},
+        {"eval": "document.getElementById('playback-settings').textContent"},
+    ])[len(OPEN):]  # fmt: skip
+    assert results[1] is False
+    said = " ".join(results[-1].split())
+    assert "Same sound in both ears" in said and "mono" in said
+    assert daemon.session.document()["settings"]["mono"] is True
+    assert ("set_mono", True) in daemon.player.calls
+
+
 def test_the_track_switches_take_tracks_out_of_the_list_and_put_them_back(daemon, tmp_path):
     rows = "[...document.querySelectorAll('#tracks li')].map((li) => li.dataset.id)"
     shot = tmp_path / "tracks.png"
