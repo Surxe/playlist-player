@@ -101,7 +101,7 @@ OPEN = [
     {"wait": "document.getElementById('playlists').options.length"},
     {"eval": HELPERS},
     {"eval": "t.el('settings-open').click()"},
-    {"wait": "document.querySelectorAll('#overlay-form .row').length === 13"},
+    {"wait": "document.querySelectorAll('#overlay-form .row').length === 14"},
 ]
 
 

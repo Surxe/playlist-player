@@ -12,8 +12,10 @@ from spotifixed.overlay.presenter import (
     HIDDEN,
     SAMPLE_NEXT,
     SAMPLE_TEXT,
+    VOLUME_SHOWN_MS,
     OverlayModel,
     OverlayView,
+    fade_level,
     present,
     sample_view,
 )
@@ -370,3 +372,118 @@ def test_a_line_aligned_to_the_audio_uses_its_own_word_times():
     assert shown(11.8) == "two"
     assert shown(10.3, offset_ms=-200) == "one"  # still on the audio's clock
     assert shown(12.1) == "three"  # the next line was not aligned: the estimate again
+
+
+# ----------------------------- volume indicator ----------------------------- #
+
+
+def indicator_model(**state) -> OverlayModel:
+    """A connected model that has seen its first state (the baseline) at T0."""
+    model = OverlayModel(volume_indicator=True)
+    model.set_connected(True)
+    model.set_state(playing(10.5, volume=60.0, **state), now_ms=T0)
+    model.set_lyrics("T1", LINES)
+    return model
+
+
+def test_the_first_state_after_connecting_shows_no_volume():
+    assert indicator_model().view(T0).volume is None
+
+
+def test_a_volume_change_shows_it_above_the_line_for_a_while():
+    model = indicator_model()
+    model.set_state(playing(10.5, volume=65.0), now_ms=T0)
+    shown = model.view(T0 + 100)
+    assert (shown.visible, shown.text, shown.volume) == (True, "an invented first line", 65)
+    assert shown.ticking  # it has to come down on time
+    assert model.view(T0 + VOLUME_SHOWN_MS).volume is None
+    assert model.view(T0 + VOLUME_SHOWN_MS).text  # the line stays
+
+
+def test_while_paused_the_volume_alone_is_shown_then_the_overlay_goes_away():
+    model = indicator_model(status=PlayerStatus.PAUSED, paused=True)
+    model.set_state(playing(10.5, volume=55.0, status=PlayerStatus.PAUSED, paused=True), now_ms=T0)
+    shown = model.view(T0 + 100)
+    assert (shown.visible, shown.text, shown.volume) == (True, "", 55)
+    assert model.view(T0 + VOLUME_SHOWN_MS) == HIDDEN
+
+
+def test_held_presses_keep_it_up_from_the_last_change():
+    model = indicator_model()
+    for step, volume in enumerate((65.0, 70.0, 75.0)):
+        model.set_state(playing(10.5, volume=volume), now_ms=T0 + 500 * step)
+    last = T0 + 1000
+    assert model.view(last + VOLUME_SHOWN_MS - 1).volume == 75
+    assert model.view(last + VOLUME_SHOWN_MS).volume is None
+
+
+def test_anything_but_the_volume_changing_shows_nothing():
+    """The fade-in on resume works below the published volume, so it cannot show either."""
+    model = indicator_model()
+    for state in (playing(20.5, volume=60.0), playing(0.0, volume=60.0, track_id="T2")):
+        model.set_state(state, now_ms=T0)
+        assert model.view(T0 + 10).volume is None
+
+
+def test_switched_off_or_reconnected_there_is_no_indicator():
+    model = indicator_model()
+    model.set_state(playing(10.5, volume=65.0), now_ms=T0)
+    model.configure(lead_ms=0, show_next=False, volume_indicator=False)
+    assert model.view(T0 + 10).volume is None
+    model.set_state(playing(10.5, volume=70.0), now_ms=T0)
+    assert model.view(T0 + 10).volume is None
+
+    model = indicator_model()
+    model.set_state(playing(10.5, volume=65.0), now_ms=T0)
+    model.set_connected(False)
+    model.set_connected(True)
+    model.set_state(playing(10.5, volume=90.0), now_ms=T0)  # a new baseline, not a change
+    assert model.view(T0 + 10).volume is None
+
+
+def test_the_volume_shown_is_rounded_to_a_whole_number():
+    model = indicator_model()
+    model.set_state(playing(10.5, volume=64.6), now_ms=T0)
+    assert model.view(T0).volume == 65
+
+
+# ------------------------------- fade-in level ------------------------------- #
+
+
+def fading(position_s: float, **state) -> PlaybackState:
+    """Playing at ``position_s``, in a 2 s fade-in that began at 10 s, at volume 64."""
+    return playing(position_s, volume=64.0, fade_from_s=10.0, fade_in_s=2.0, **state)
+
+
+def test_a_fade_in_shows_its_level_rising_to_the_volume_on_the_sliders_scale():
+    # Gain rises evenly; mpv's volume is cubic, so the level is volume * cbrt(progress).
+    assert fade_level(fading(10.0), T0) == 0
+    assert fade_level(fading(10.25), T0) == pytest.approx(32.0)  # 1/8 of the way: half
+    assert fade_level(fading(11.0), T0) == pytest.approx(64.0 * 0.5 ** (1 / 3))
+    assert fade_level(fading(12.0), T0) == 64.0
+
+
+def test_the_level_follows_playback_time_on_the_overlays_own_clock():
+    state = fading(10.25)
+    assert fade_level(state, T0 + 750) == pytest.approx(64.0 * 0.5 ** (1 / 3))
+
+
+def test_after_the_fade_the_volume_is_held_for_a_while_then_goes():
+    end = 12.0
+    assert fade_level(fading(end + VOLUME_SHOWN_MS / 1000 - 0.01), T0) == 64.0
+    assert fade_level(fading(end + VOLUME_SHOWN_MS / 1000), T0) is None
+
+
+def test_no_level_without_a_fade_or_while_paused():
+    assert fade_level(playing(10.5), T0) is None
+    assert fade_level(fading(10.5, status=PlayerStatus.PAUSED, paused=True), T0) is None
+
+
+def test_the_fade_shows_in_the_view_only_with_the_indicator_on():
+    lit = view(fading(10.25), show_fade=True)
+    assert (lit.visible, lit.volume, lit.ticking) == (True, 32, True)
+    assert view(fading(10.25)).volume is None
+    model = OverlayModel(volume_indicator=True)
+    model.set_connected(True)
+    model.set_state(fading(10.25), now_ms=T0)  # the first state: a fade is no baseline
+    assert model.view(T0).volume == 32

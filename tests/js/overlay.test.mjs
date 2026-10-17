@@ -58,7 +58,7 @@ test("the colour picker is given a form it understands, or left alone", () => {
 test("every setting is listed once", () => {
   const keys = FIELDS.map((field) => field.key);
   assert.equal(new Set(keys).size, keys.length);
-  assert.equal(keys.length, 13);
+  assert.equal(keys.length, 14);
 });
 
 test("a margin slider cannot drag an attached overlay off the screen", () => {

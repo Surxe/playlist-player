@@ -254,6 +254,11 @@ class PlaybackState:
     lyrics_kind: LyricsKind = LyricsKind.MISSING
     offset_ms: int = 0
     error: str | None = field(default=None)
+    # A fade-in under way: it began when this track was at ``fade_from_s`` and rises
+    # over ``fade_in_s`` seconds of playback. Set on the snapshots published while it
+    # runs, so a client can draw the rising level itself; 0 means no fade.
+    fade_from_s: float = 0.0
+    fade_in_s: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

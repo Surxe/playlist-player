@@ -309,6 +309,10 @@ deliberately not registered, so a token cannot end up on a command line.
   - Default: `"false"`
   - Command line: `--overlay-underline-word`
 
+* **SPOTIFIXED_OVERLAY_VOLUME_INDICATOR** - Show spotifixed's volume in the overlay for a moment whenever it changes, above the lyric line, even while paused, and the level rising during the fade-in on resume.
+  - Default: `"true"`
+  - Command line: `--overlay-volume-indicator`
+
 
 #### Shortcuts
 

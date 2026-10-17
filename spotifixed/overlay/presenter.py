@@ -16,6 +16,19 @@ whatever is or is not playing, so the overlay can be positioned from the remote-
 page. A preview still needs the connection, and ends by itself at the instant the daemon
 named.
 
+The volume indicator rides on top of whatever the line logic decided. For
+:data:`VOLUME_SHOWN_MS` after the volume changes, the view is visible and carries the
+volume, paused or not, with or without a line. The first state after connecting sets
+the baseline and shows nothing, so a restart does not flash it.
+
+The fade-in on resume shows too, as the level rising to the volume and then held for
+:data:`VOLUME_SHOWN_MS`. The daemon publishes no level while it fades; the snapshot that
+starts playback says where the fade began and how long it is, and the level is worked
+out here from the playback position on the overlay's own timer. mpv's volume is cubic
+(the gain is the volume over 100, cubed) while the fade raises the gain evenly, so the
+level shown, on the volume slider's scale, is the volume times the cube root of the
+fade's progress.
+
 In every other case the view is hidden, and the renderer unmaps the surface rather than
 drawing something transparent, so the compositor can go back to presenting the
 fullscreen application directly.
@@ -25,7 +38,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..lyrics import (
     aligned_word,
@@ -36,7 +49,10 @@ from ..lyrics import (
     word_ranges,
 )
 from ..models import LyricLine, LyricsKind, PlaybackState, PlayerStatus
-from .clock import position_ms
+from .clock import now_epoch_ms, position_ms
+
+# How long the volume stays on screen after it last changed.
+VOLUME_SHOWN_MS = 1500
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +65,8 @@ class OverlayView:
     ticking: bool = False
     # The word of ``text`` to underline, as character offsets (start, end); None for none.
     underline: tuple[int, int] | None = None
+    # The volume to show (0-100) while the indicator is up; None for no indicator.
+    volume: int | None = None
 
 
 HIDDEN = OverlayView(visible=False)
@@ -85,15 +103,69 @@ def present(
     show_next: bool = False,
     preview_until_ms: int = 0,
     ends: Sequence[Sequence[float]] | None = None,
+    volume_until_ms: int = 0,
+    show_fade: bool = False,
 ) -> OverlayView:
     """The view for this instant. ``times`` are the timestamps of ``lines``.
 
     ``ends`` are the lines' word endings (:func:`~spotifixed.lyrics.word_ends`);
     given, the word being sung is underlined, and left out, no word is. A line that
     carries aligned word times uses those; any other line uses the estimate in ``ends``.
+    Until ``volume_until_ms`` the state's volume is shown as well, and with
+    ``show_fade`` so is the level of a fade-in under way.
     """
     if not connected:
         return HIDDEN
+    view = _line_view(
+        state=state,
+        lyrics_track_id=lyrics_track_id,
+        lines=lines,
+        times=times,
+        now_ms=now_ms,
+        lead_ms=lead_ms,
+        show_next=show_next,
+        preview_until_ms=preview_until_ms,
+        ends=ends,
+    )
+    if state is None:
+        return view
+    level = fade_level(state, now_ms) if show_fade else None
+    if level is None and now_ms < volume_until_ms:
+        level = state.volume
+    if level is None:
+        return view
+    # ticking: the level rises, and the indicator ends, on time
+    return replace(view, visible=True, ticking=True, volume=round(level))
+
+
+def fade_level(state: PlaybackState, now_ms: int) -> float | None:
+    """The level a fade-in has reached, on the volume's scale; None when none is shown.
+
+    Shown while the fade rises and for :data:`VOLUME_SHOWN_MS` after it ends, counted
+    in playback time, which is what the fade itself counts.
+    """
+    if state.fade_in_s <= 0 or state.status is not PlayerStatus.PLAYING or state.paused:
+        return None
+    played = state.position_at(now_ms) - state.fade_from_s
+    if played < 0 or played >= state.fade_in_s + VOLUME_SHOWN_MS / 1000:
+        return None
+    share = min(1.0, played / state.fade_in_s)
+    return state.volume * share ** (1 / 3)
+
+
+def _line_view(
+    *,
+    state: PlaybackState | None,
+    lyrics_track_id: str | None,
+    lines: Sequence[LyricLine],
+    times: Sequence[int],
+    now_ms: int,
+    lead_ms: int,
+    show_next: bool,
+    preview_until_ms: int,
+    ends: Sequence[Sequence[float]] | None,
+) -> OverlayView:
+    """The lyric line part of :func:`present`, for a connected overlay."""
     if now_ms < preview_until_ms:
         # ticking: it ends on time
         return sample_view(show_next=show_next, ticking=True, underline_word=ends is not None)
@@ -135,11 +207,18 @@ class OverlayModel:
     """
 
     def __init__(
-        self, *, lead_ms: int = 0, show_next: bool = False, underline_word: bool = False
+        self,
+        *,
+        lead_ms: int = 0,
+        show_next: bool = False,
+        underline_word: bool = False,
+        volume_indicator: bool = False,
     ) -> None:
         self._lead_ms = lead_ms
         self._show_next = show_next
         self._underline_word = underline_word
+        self._volume_indicator = volume_indicator
+        self._volume_until_ms = 0
         self._lock = threading.Lock()
         self._connected = False
         self._state: PlaybackState | None = None
@@ -149,12 +228,23 @@ class OverlayModel:
         self._ends: list[tuple[float, ...]] = []
         self._preview_until_ms = 0
 
-    def configure(self, *, lead_ms: int, show_next: bool, underline_word: bool = False) -> None:
-        """Change how lines are timed, and whether the next line and the word are shown."""
+    def configure(
+        self,
+        *,
+        lead_ms: int,
+        show_next: bool,
+        underline_word: bool = False,
+        volume_indicator: bool = False,
+    ) -> None:
+        """Change how lines are timed, and whether the next line, the word and the volume
+        are shown."""
         with self._lock:
             self._lead_ms = lead_ms
             self._show_next = show_next
             self._underline_word = underline_word
+            self._volume_indicator = volume_indicator
+            if not volume_indicator:
+                self._volume_until_ms = 0
 
     def set_preview_until(self, epoch_ms: int) -> None:
         """Show the sample line until ``epoch_ms``; 0 (or any past instant) ends it."""
@@ -167,10 +257,17 @@ class OverlayModel:
             if not connected:
                 self._state = None  # whatever we knew is no longer known to be true
                 self._preview_until_ms = 0
+                self._volume_until_ms = 0
 
-    def set_state(self, state: PlaybackState) -> None:
+    def set_state(self, state: PlaybackState, now_ms: int | None = None) -> None:
+        """Take the latest state. A volume different from the last one (not the first one
+        after connecting) puts the indicator up, or keeps it up, from ``now_ms``."""
         with self._lock:
-            self._state = state
+            previous, self._state = self._state, state
+            if self._volume_indicator and previous is not None and state.volume != previous.volume:
+                self._volume_until_ms = (now_epoch_ms() if now_ms is None else now_ms) + (
+                    VOLUME_SHOWN_MS
+                )
 
     def set_lyrics(self, track_id: str, lines: Sequence[LyricLine]) -> None:
         with self._lock:
@@ -202,4 +299,6 @@ class OverlayModel:
                 show_next=self._show_next,
                 preview_until_ms=self._preview_until_ms,
                 ends=self._ends if self._underline_word else None,
+                volume_until_ms=self._volume_until_ms,
+                show_fade=self._volume_indicator,
             )

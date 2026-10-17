@@ -31,11 +31,12 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from ..errors import PlaybackError
-from ..models import PlayerStatus
+from ..models import PlaybackState, PlayerStatus
 from .mpv_ipc import MpvCommandError, MpvIpc
 from .queue import PlayQueue
 from .reducer import OBSERVED_PROPERTIES, MpvStateReducer
@@ -105,6 +106,8 @@ class MpvPlayer:
         self._fade_len = 0.0
         self._fade_s: float | None = None
         self._fade_run = 0
+        # The fade under way, as published: (track, position it began at, its length).
+        self._fading: tuple[str | None, float, float] | None = None
         # Whether the sound is mixed to mono. An mpv started later is started with it.
         self._mono = False
         # The volume last set or reported. An mpv started later is started at it, so a
@@ -409,6 +412,7 @@ class MpvPlayer:
                 except (MpvCommandError, PlaybackError):
                     return  # mpv went away; the one that replaces it starts with no gain set
             if share >= 1:
+                self._fading = None
                 return
 
     def set_mono(self, on: bool) -> None:
@@ -449,13 +453,33 @@ class MpvPlayer:
 
     def _publish(self) -> None:
         position, captured_at = self._position()
-        state = self.bus.publish(self._reducer.snapshot(position, captured_at))
+        snapshot = self._reducer.snapshot(position, captured_at)
+        state = self.bus.publish(self._with_fade(snapshot))
         if state.status is PlayerStatus.PLAYING:
             self._restart_available = True  # mpv is evidently healthy again
             if self._fade_s is not None:
                 self._start_fade()
         elif state.status is PlayerStatus.PAUSED:
             self._arm_fade()
+
+    def _with_fade(self, snapshot: PlaybackState) -> PlaybackState:
+        """``snapshot`` marked with the fade-in it starts or is part of, if any.
+
+        The snapshot that starts playback is published anyway, and the fade starts right
+        after it, so marking it costs no extra publish. Every snapshot while the fade
+        runs carries it too. A pause, another track or the fade's end clears it.
+        """
+        fading = self._fading
+        if snapshot.status is not PlayerStatus.PLAYING:
+            fading = None
+        elif self._fade_s is not None:
+            fading = (snapshot.track_id, snapshot.position_s, self._fade_s)  # starts now
+        elif fading is not None and fading[0] != snapshot.track_id:
+            fading = None
+        self._fading = fading
+        if fading is None:
+            return snapshot
+        return replace(snapshot, fade_from_s=fading[1], fade_in_s=fading[2])
 
     def _state_loop(self) -> None:
         last_publish = time.monotonic()

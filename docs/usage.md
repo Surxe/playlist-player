@@ -163,6 +163,20 @@ monitor, font, size, colours, a second (next) line, how early a line appears and
 fade. **Show a sample line** puts a stand-in line on screen so you can do this with
 nothing playing; it goes away by itself when the panel or the tab is closed.
 
+**Show volume changes** (on by default) puts spotifixed's volume, such as "Volume 65%",
+above the lyric line for 1.5 seconds whenever it changes: from the volume shortcuts, the
+**Vol** slider or anything else that changes mpv's volume. It shows while paused too, on
+its own, and the overlay goes away again afterwards. Holding a shortcut keeps it up
+until the last change.
+
+It also shows the fade-in on resume (**Fade in** under Playback): the level climbing to
+your volume, then held for 1.5 seconds. The daemon sends nothing extra for this. The
+update it publishes when playback starts says where the fade began and how long it
+lasts, and the overlay works out the level from the playback position on its own timer.
+mpv's volume is cubic while the fade raises the gain evenly, so the level is shown on
+the slider's scale: your volume times the cube root of the fade's progress, which
+climbs quickly at first. Between changes and fades the indicator costs nothing.
+
 Changes are saved automatically and take effect immediately: there is nothing to save
 or copy anywhere. They are kept in `state/overlay.json` and are still there after a
 restart. A highlighted row has been changed in the panel; the `x` beside it puts that one

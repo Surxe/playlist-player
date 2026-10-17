@@ -43,6 +43,7 @@ _PADDING_PX = 14
 _FADE_STEP_MS = 16
 _NEXT_LINE_SCALE = 0.7
 _NEXT_LINE_OPACITY = 0.6
+_VOLUME_SCALE = 0.7
 
 _EDGES = {
     "top": LayerShell.Edge.TOP,
@@ -81,7 +82,11 @@ class GtkLayerRenderer:
         self._next = self._label("next")
         self._next.set_opacity(_NEXT_LINE_OPACITY)
         self._next.set_visible(False)
+        # Above the line, in the same surface: it sits wherever the line is anchored.
+        self._volume = self._label("volume")
+        self._volume.set_visible(False)
         self._box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self._box.append(self._volume)
         self._box.append(self._line)
         self._box.append(self._next)
 
@@ -110,6 +115,7 @@ class GtkLayerRenderer:
         self._css.load_from_string(css)
         self._set_font(self._line, 1.0, self._shown)
         self._set_font(self._next, _NEXT_LINE_SCALE)
+        self._set_font(self._volume, _VOLUME_SCALE)
 
     @staticmethod
     def _label(css_class: str) -> Gtk.Label:
@@ -305,13 +311,18 @@ class GtkLayerRenderer:
             return
         self._line.set_label(view.text)
         self._line.set_attributes(self._attributes(1.0, view))
+        # The volume can be up with no line due (paused, or between lines).
+        self._line.set_visible(bool(view.text))
         self._next.set_label(view.next_text)
         self._next.set_visible(bool(view.next_text))
-        if not previous.visible or previous.text != view.text:
+        self._volume.set_label("" if view.volume is None else f"Volume {view.volume}%")
+        self._volume.set_visible(view.volume is not None)
+        if view.text and (not previous.visible or previous.text != view.text):
             self._fade_in()
         # Changed in place: a window just being shown sizes itself. An underline moving
         # to the next word changes no size, so it is not a reason to resize.
-        if previous.visible and (previous.text, previous.next_text) != (view.text, view.next_text):
+        shape = (view.text, view.next_text, view.volume)
+        if previous.visible and (previous.text, previous.next_text, previous.volume) != shape:
             self._refit()
         self._window.set_visible(True)
 
@@ -350,8 +361,11 @@ class GtkLayerRenderer:
             "margins": {n: LayerShell.get_margin(window, e) for n, e in _EDGES.items()},
             "monitor": getattr(LayerShell.get_monitor(window), "get_connector", lambda: None)(),
             "mapped": bool(window.get_mapped()),
-            "text": self._line.get_label() if window.get_mapped() else "",
+            "text": self._line.get_label()
+            if self._line.get_visible() and window.get_mapped()
+            else "",
             "next_text": self._next.get_label() if self._next.get_visible() else "",
+            "volume": self._volume.get_label() if self._volume.get_visible() else "",
             "underlined": self._underlined() if window.get_mapped() else "",
             "width": window.get_width(),
             "height": window.get_height(),

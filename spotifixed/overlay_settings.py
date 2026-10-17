@@ -120,6 +120,7 @@ RULES: dict[str, _Whole | _Text | _Choice | _Switch] = {
     "lead_ms": _Whole(-5000, 5000),
     "fade_ms": _Whole(0, 5000),
     "underline_word": _Switch(),
+    "volume_indicator": _Switch(),
 }
 
 
@@ -154,6 +155,7 @@ class OverlaySettings:
     lead_ms: int
     fade_ms: int
     underline_word: bool
+    volume_indicator: bool
 
     @classmethod
     def from_settings(cls, settings: Settings) -> OverlaySettings:

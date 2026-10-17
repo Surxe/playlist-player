@@ -87,6 +87,7 @@ class LiveSettings:
                 lead_ms=values.lead_ms,
                 show_next=values.lines == 2,
                 underline_word=values.underline_word,
+                volume_indicator=values.volume_indicator,
             )
             self._renderer.reconfigure(*placement_and_style(values), values.monitor)
         until = document.get("preview_until_ms")
@@ -99,6 +100,7 @@ def connect(settings: Settings, renderer: Renderer) -> tuple[OverlayModel, Daemo
         lead_ms=settings.overlay_lead_ms,
         show_next=settings.overlay_lines == 2,
         underline_word=settings.overlay_underline_word,
+        volume_indicator=settings.overlay_volume_indicator,
     )
     live = LiveSettings(OverlaySettings.from_settings(settings), model, renderer)
     client = DaemonClient(settings.base_url, model, on_change=renderer.wake, on_overlay=live.apply)
