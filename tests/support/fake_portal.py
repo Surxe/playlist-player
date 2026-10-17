@@ -3,13 +3,15 @@
     python -I tests/support/fake_portal.py
 
 It owns ``org.freedesktop.portal.Desktop`` on the session bus in the environment and
-answers ``CreateSession`` and ``BindShortcuts`` as the real portal does: a request
-object path at once, then a ``Response`` signal on it. Each shortcut is described back
-with its preferred trigger as its trigger description, except one whose description
-says "taken", which is left with no key. After binding it presses every bound shortcut
-once, in order, then a shortcut it never bound and one in another session, which a
-client must ignore. Every call it receives is printed as one JSON line, then ``ready``
-once it owns its name.
+answers ``CreateSession``, ``ListShortcuts`` and ``BindShortcuts`` as the real portal
+does: a request object path at once, then a ``Response`` signal on it. Like the real
+one it remembers what was bound, for as long as it runs, and lists it to every later
+session. Each shortcut is described back with its preferred trigger as its trigger
+description, except one whose description says "taken", which is left with no key. Once
+a session has its shortcuts, by binding them or by listing ones already bound, it
+presses every one once, in order, then a shortcut it never bound and one in another
+session, which a client must ignore. Every call it receives is printed as one JSON line,
+then ``ready`` once it owns its name.
 """
 
 from __future__ import annotations
@@ -28,6 +30,11 @@ XML = f"""
 <node>
   <interface name="{INTERFACE}">
     <method name="CreateSession">
+      <arg type="a{{sv}}" name="options" direction="in"/>
+      <arg type="o" name="handle" direction="out"/>
+    </method>
+    <method name="ListShortcuts">
+      <arg type="o" name="session_handle" direction="in"/>
       <arg type="a{{sv}}" name="options" direction="in"/>
       <arg type="o" name="handle" direction="out"/>
     </method>
@@ -56,6 +63,7 @@ def say(record: object) -> None:
 def main() -> None:
     connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     loop = GLib.MainLoop()
+    bound: list[tuple[str, dict]] = []  # what was bound, as the desktop keeps it
 
     def emit(destination, path, interface, name, signature, values) -> bool:
         connection.emit_signal(destination, path, interface, name, GLib.Variant(signature, values))
@@ -75,14 +83,17 @@ def main() -> None:
             session = f"{OBJECT_PATH}/session/{unique}/{options['session_handle_token']}"
             respond(sender, request, {"session_handle": GLib.Variant("s", session)})
             return
-        session, shortcuts = args[0], args[1]
-        described = []
-        for sid, info in shortcuts:
-            keys = "" if "taken" in info["description"] else info["preferred_trigger"]
-            described.append((sid, {"trigger_description": GLib.Variant("s", keys)}))
-        respond(sender, request, {"shortcuts": GLib.Variant("a(sa{sv})", described)})
-        presses = [(session, sid) for sid, _info in shortcuts]
-        presses += [(session, "never-bound"), (f"{OBJECT_PATH}/session/other/x", shortcuts[0][0])]
+        session = args[0]
+        if method == "BindShortcuts":
+            bound[:] = []
+            for sid, info in args[1]:
+                keys = "" if "taken" in info["description"] else info["preferred_trigger"]
+                bound.append((sid, {"trigger_description": GLib.Variant("s", keys)}))
+        respond(sender, request, {"shortcuts": GLib.Variant("a(sa{sv})", list(bound))})
+        if not bound:
+            return  # nothing to press until the client binds
+        presses = [(session, sid) for sid, _info in bound]
+        presses += [(session, "never-bound"), (f"{OBJECT_PATH}/session/other/x", bound[0][0])]
         for when, (to_session, sid) in enumerate(presses, start=1):
             values = (to_session, sid, when, {})
             GLib.timeout_add(

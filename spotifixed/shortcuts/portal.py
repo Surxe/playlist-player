@@ -3,7 +3,9 @@
 ``org.freedesktop.portal.GlobalShortcuts`` is how an application that is not part of the
 desktop gets a key that works while another window, even a fullscreen game, has focus.
 The application opens a session, binds its shortcuts with a preferred trigger each, and
-is sent an ``Activated`` signal on every press. The desktop owns the actual keys: it may
+is sent an ``Activated`` signal on every press. The desktop keeps the bindings between
+runs, and binding again shows its dialog again, so a session first lists what is already
+bound and binds only when one of the shortcuts is missing. The desktop owns the actual keys: it may
 show the binding to the user, let them change it, or leave a shortcut unassigned when
 its trigger is already taken. What it settled on comes back in the bind response.
 
@@ -91,7 +93,7 @@ class GlobalShortcuts:
 
     def start(self) -> None:
         options = {"session_handle_token": GLib.Variant("s", SESSION_TOKEN)}
-        self._request("CreateSession", lambda token: (self._options(token, options),), self._bind)
+        self._request("CreateSession", lambda token: (self._options(token, options),), self._list)
 
     def close(self) -> None:
         """End the session, which releases the shortcuts. Safe to call more than once."""
@@ -109,7 +111,7 @@ class GlobalShortcuts:
     def _options(token: str, extra: dict[str, GLib.Variant] | None = None) -> dict[str, Any]:
         return {"handle_token": GLib.Variant("s", token), **(extra or {})}
 
-    def _bind(self, results: dict[str, Any]) -> None:
+    def _list(self, results: dict[str, Any]) -> None:
         self._session = str(results.get("session_handle") or "")
         if not self._session:
             self._on_failed("the desktop opened no session")
@@ -118,6 +120,27 @@ class GlobalShortcuts:
             BUS_NAME, INTERFACE, "Activated", OBJECT_PATH, None,
             Gio.DBusSignalFlags.NONE, self._activated_signal,
         )  # fmt: skip
+        self._request(
+            "ListShortcuts",
+            lambda token: (self._session, self._options(token)),
+            self._bind_missing,
+            signature="(oa{sv})",
+        )
+
+    def _bind_missing(self, results: dict[str, Any]) -> None:
+        """Bind only when a shortcut is not bound yet: binding shows the desktop's dialog.
+
+        A desktop keeps an application's shortcuts between runs and hands them to its
+        next session, so from the second run on there is normally nothing to bind.
+        """
+        if set(self._shortcuts) <= {
+            shortcut_id for shortcut_id, _info in results.get("shortcuts", [])
+        }:
+            self._bound(results)
+            return
+        self._bind()
+
+    def _bind(self) -> None:
         wanted = [
             (
                 shortcut.id,
@@ -139,6 +162,7 @@ class GlobalShortcuts:
         bound = {
             shortcut_id: str(info.get("trigger_description", ""))
             for shortcut_id, info in results.get("shortcuts", [])
+            if shortcut_id in self._shortcuts
         }
         self._on_bound(bound)
 

@@ -141,3 +141,24 @@ def test_with_no_shortcut_set_it_binds_nothing_and_ends(session_bus, fake_server
     out, _err = process.communicate(timeout=10)
     assert process.returncode == 0
     assert "no keyboard shortcuts are set" in out
+
+
+def test_a_second_run_finds_its_shortcuts_bound_and_does_not_bind_again(portal, fake_server):
+    """Binding shows the desktop's dialog, so only the first run may bind."""
+    fake_server.route("POST", "/api/v1/player/volume", (200, {"ok": True}))
+    for run in (1, 2):
+        process = shortcuts_process(port_of(fake_server.url))
+        try:
+            wait_for(lambda run=run: len(fake_server.requests) >= 2 * run)
+        finally:
+            process.send_signal(signal.SIGTERM)
+            out, err = process.communicate(timeout=5)
+        assert process.returncode == 0, err
+        assert "Raise spotifixed's volume: CTRL+XF86AudioRaiseVolume" in out
+    assert [r.json() for r in fake_server.requests] == [{"delta": 5}, {"delta": -5}] * 2
+
+    portal.terminate()
+    methods = [json.loads(line)["method"] for line in portal.stdout if line.startswith("{")]
+    assert methods == [
+        "CreateSession", "ListShortcuts", "BindShortcuts", "CreateSession", "ListShortcuts",
+    ]  # fmt: skip
