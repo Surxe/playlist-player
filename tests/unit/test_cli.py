@@ -11,7 +11,7 @@ from spotifixed import cli
 from spotifixed.config import REPO_ROOT
 from spotifixed.errors import ConfigError
 
-COMMANDS = ["sync", "status", "pin", "serve", "ctl", "overlay", "start"]
+COMMANDS = ["sync", "status", "pin", "serve", "ctl", "overlay", "shortcuts", "start"]
 
 
 def test_help_lists_every_command(capsys):
@@ -31,8 +31,10 @@ def test_help_lists_every_command(capsys):
         ["pin", "T1", "http://example.invalid/v"],
         ["serve", "--port", "9100"],
         ["ctl", "seek", "+10"],
+        ["ctl", "volume", "-5"],
         ["overlay", "--demo"],
-        ["start", "--no-overlay", "--no-browser", "--port", "9100"],
+        ["shortcuts", "--shortcut-volume-up", "LOGO+Up"],
+        ["start", "--no-overlay", "--no-shortcuts", "--no-browser", "--port", "9100"],
     ],
 )
 def test_each_command_parses_and_reaches_a_handler(argv):
@@ -66,3 +68,20 @@ def test_runs_as_a_module():
         cwd=REPO_ROOT,
     )
     assert result.returncode == 0 and result.stdout.strip() == "0.1.0"
+
+
+@pytest.mark.parametrize(
+    ("verb", "value", "body"),
+    [
+        ("volume", "40", {"volume": 40.0}),
+        ("volume", "+5", {"delta": 5.0}),
+        ("volume", "-5", {"delta": -5.0}),
+        ("seek", "90", {"position_s": 90.0}),
+        ("seek", "-10", {"delta_s": -10.0}),
+        ("toggle", None, {}),
+    ],
+)
+def test_ctl_sends_a_signed_number_as_a_change(verb, value, body):
+    from spotifixed.server.ctl import _body
+
+    assert _body(verb, value) == body

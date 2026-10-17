@@ -658,3 +658,32 @@ def test_a_line_aligned_to_the_audio_is_underlined_by_its_own_word_times(daemon,
     assert sung_at(daemon, tmp_path, 2.0) == ["line", "underline"]
     # The last line was not aligned, so it is estimated as before.
     assert sung_at(daemon, tmp_path, 4.2) == ["invented", "underline"]
+
+
+def test_the_keyboard_section_lists_the_volume_keys_and_the_media_keys(
+    store, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("SPOTIFIXED_CACHE_DIR", str(store.cache_dir))
+    monkeypatch.setenv("SPOTIFIXED_STATE_DIR", str(store.state_dir))
+    monkeypatch.setenv("SPOTIFIXED_MPV_MPRIS_PLUGIN", "/nonexistent/mpris.so")
+    build_library(store)
+    daemon = Daemon(load_settings(), store, FakePlayer(), port=0, keepalive_s=0.5)
+    threading.Thread(target=daemon.serve_forever, daemon=True).start()
+    try:
+        results = drive(daemon, tmp_path, [
+            *OPEN,
+            {"wait": "t.el('shortcut-list').children.length"},
+            {"eval": "[...t.el('shortcut-list').children].map((n) => n.textContent)"},
+            {"eval": "t.text('keyboard-settings')"},
+        ])[len(OPEN):]  # fmt: skip
+    finally:
+        daemon.shutdown()
+    rows = results[1]
+    assert rows[:4] == [
+        "Ctrl+Volume Up", "Raise spotifixed's volume",
+        "Ctrl+Volume Down", "Lower spotifixed's volume",
+    ]  # fmt: skip
+    assert "Play/Pause" in rows and "Next track" in rows
+    said = " ".join(results[-1].split())
+    assert "even while a game or another window is in front" in said
+    assert "daemon" not in said and "portal" not in said

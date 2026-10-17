@@ -21,10 +21,10 @@ def _body(verb: str, value: str | None) -> dict[str, Any]:
         number = float(value or "")
     except ValueError:
         raise PlaylistPlayerError(f"ctl {verb} needs a number, got {value!r}") from None
-    if verb == "volume":
-        return {"volume": number}
-    # A sign makes it relative: "seek +10", "seek -5". A bare number is a position.
+    # A sign makes it relative: "seek +10", "volume -5". A bare number is a position or level.
     relative = (value or "").lstrip().startswith(("+", "-"))
+    if verb == "volume":
+        return {"delta": number} if relative else {"volume": number}
     return {"delta_s": number} if relative else {"position_s": number}
 
 

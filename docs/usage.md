@@ -9,7 +9,7 @@ The player, the page and the overlay, once spotifixed is [set up](setup.md).
 .venv/bin/python -m spotifixed serve          # the daemon alone; then open http://127.0.0.1:8765/
 .venv/bin/python -m spotifixed ctl toggle     # also: play, pause, next, prev, stop
 .venv/bin/python -m spotifixed ctl seek +10   # relative with a sign, absolute without
-.venv/bin/python -m spotifixed ctl volume 70
+.venv/bin/python -m spotifixed ctl volume 70   # or +5 / -5 to change it
 ```
 
 `start` is the one command for everyday use. It runs the daemon, starts the overlay
@@ -20,7 +20,9 @@ already running and it only opens the page. If the overlay cannot run here (no
 layer-shell, no display) that is said once and the rest carries on. The overlay can also
 be switched off and on from the page (see [The overlay](#the-overlay)), and `start` stops or starts it to
 match. `--no-overlay` and `--no-browser` leave either part out; with `--no-overlay` the
-page cannot switch the overlay on. To put it behind a desktop launcher, have the
+page cannot switch the overlay on. `start` also holds the volume shortcuts while it runs
+(see [Keyboard shortcuts and media keys](#keyboard-shortcuts-and-media-keys));
+`--no-shortcuts` leaves them out. To put it behind a desktop launcher, have the
 launcher open a terminal running `start`; `spotifixed/server/static/icon.svg` is
 the icon the page uses and serves as the launcher's too.
 
@@ -84,12 +86,8 @@ the overlay is not affected. **Show time and position** off hides the elapsed ti
 the slider. The page only redraws while something it shows is moving: every frame for
 synced lyrics, once a second for the time alone, and not at all while paused or with
 both switches off. The lyric offset is set in the lyric pane, so turn lyrics back on to
-adjust it. Media keys and `ctl` go to the daemon, not the page, and work even with the
-page closed; `start --no-browser` is the lightest way to run.
-
-`ctl` exists so a desktop shortcut can pause from inside a fullscreen application. With
-`SPOTIFIXED_MPV_MPRIS_PLUGIN` set to the plugin's path (Debian:
-`/usr/lib/mpv-mpris/mpris.so`), the keyboard's media keys work too.
+adjust it. Media keys, the volume shortcuts and `ctl` go to the daemon, not the page,
+and work even with the page closed; `start --no-browser` is the lightest way to run.
 
 The daemon listens on loopback only, refuses requests that do not name its own address
 or that come from another web origin, takes playlist and track IDs but never file
@@ -97,6 +95,43 @@ paths, and has no endpoint that downloads anything. The only things a request ca
 change are playback, a track's lyric offset and the overlay's appearance, each checked
 against a fixed set of allowed values. mpv is started with no config file,
 no scripts and no network access.
+
+### Keyboard shortcuts and media keys
+
+Two kinds of keys reach spotifixed while another window, even a fullscreen game, has
+focus, and with the page closed. The **Keyboard** section under **Settings** lists both,
+as they are set up.
+
+- **The media keys** (play/pause, next, previous, stop) work through mpv's MPRIS plugin.
+  Set `SPOTIFIXED_MPV_MPRIS_PLUGIN` to the plugin's path (Debian:
+  `/usr/lib/mpv-mpris/mpris.so`). They are the keyboard's own keys and are not
+  configurable here.
+- **The volume shortcuts** change spotifixed's own volume (mpv's, the **Vol** slider on
+  the page), not the system's. They default to Ctrl+Volume Up and Ctrl+Volume Down, five
+  points a press; `SPOTIFIXED_SHORTCUT_VOLUME_UP`, `SPOTIFIXED_SHORTCUT_VOLUME_DOWN` and
+  `SPOTIFIXED_SHORTCUT_VOLUME_STEP` change them (see
+  [Configuration](setup.md#configuration)), and an empty trigger turns one off.
+
+The volume shortcuts are held by the `shortcuts` command, which `start` runs beside the
+daemon. It registers them with the desktop through the XDG global shortcuts portal
+(`org.freedesktop.portal.GlobalShortcuts`), which KDE Plasma 6 and GNOME 48 provide and
+Sway does not. The configured trigger is a suggestion: the desktop binds it when it is
+free, lists the shortcuts in its own shortcut settings (on KDE: System Settings,
+Keyboard, Shortcuts), and keeps a key the user picks there over the configured one. When it starts, `shortcuts` prints the keys
+the desktop actually assigned; "no key assigned" means the trigger was already taken.
+Where there is no portal it says so and ends, and the rest of spotifixed carries on.
+Under `serve`, run `shortcuts` beside it by hand.
+
+The desktop files the shortcuts under the application it thinks is asking, which it reads
+from the systemd scope the process runs in. Started from the desktop launcher, that is
+spotifixed; started by hand from a terminal, it is the terminal (on KDE, Konsole), and a
+binding made there does not carry over to the launcher. To run it by hand under
+spotifixed's own name:
+`systemd-run --user --scope --unit=app-spotifixed-$RANDOM python3 -m spotifixed shortcuts`.
+
+`ctl` is for any other desktop shortcut, such as one bound in a desktop without the
+portal: `ctl toggle` pauses from inside a fullscreen application, and `ctl volume +5` is
+what a volume shortcut sends.
 
 ## The overlay
 

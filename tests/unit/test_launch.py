@@ -125,6 +125,16 @@ def fake_serve(monkeypatch):
     monkeypatch.setattr(launch.Overlay, "follow", follow)
     monkeypatch.setattr(launch, "overlay_command", lambda argv: [*SLEEP, *argv])
     monkeypatch.setattr(launch, "is_listening", lambda _settings: False)
+
+    real_start = launch.Shortcuts.start
+
+    def start(self):
+        real_start(self)
+        seen.shortcuts.append(self._process)
+
+    seen.shortcuts = []
+    monkeypatch.setattr(launch, "child_command", lambda command, argv: [*SLEEP, command, *argv])
+    monkeypatch.setattr(launch.Shortcuts, "start", start)
     return seen
 
 
@@ -137,6 +147,17 @@ def test_start_launches_the_overlay_and_the_page_and_stops_the_overlay_with_the_
     (process,) = fake_serve.overlays
     assert process.args[-2:] == ["--port", "9100"]
     assert process.poll() is not None, "the overlay was left running"
+    (keys,) = fake_serve.shortcuts
+    assert keys.args[-3:] == ["shortcuts", "--port", "9100"]
+    assert keys.poll() is not None, "the shortcuts were left running"
+
+
+def test_start_leaves_out_the_shortcuts_when_asked_or_when_none_are_set(fake_serve, monkeypatch):
+    launch.run(load_settings(), overlay=False, shortcuts=False, open_page=False, open_url=print)
+    monkeypatch.setenv("SPOTIFIXED_SHORTCUT_VOLUME_UP", "")
+    monkeypatch.setenv("SPOTIFIXED_SHORTCUT_VOLUME_DOWN", "")
+    launch.run(load_settings(), overlay=False, open_page=False, open_url=print)
+    assert fake_serve.calls == 2 and fake_serve.shortcuts == []
 
 
 def test_start_can_leave_out_the_overlay_and_the_page(fake_serve):

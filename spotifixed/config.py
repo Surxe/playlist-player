@@ -72,6 +72,9 @@ class Settings:
     overlay_lead_ms: int
     overlay_fade_ms: int
     overlay_underline_word: bool
+    shortcut_volume_up: str
+    shortcut_volume_down: str
+    shortcut_volume_step: int
 
     def __repr__(self) -> str:
         # A Settings object ends up in logs and tracebacks; never let the token ride along.

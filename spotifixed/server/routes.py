@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +22,7 @@ from typing import Any
 from ..errors import CacheError, InvalidIdError, NotInCacheError, PlaybackError
 from ..overlay_settings import OverlaySettingError
 from ..playback.base import Player
+from ..shortcut_settings import MEDIA_KEYS, Shortcut
 from .library import Library
 from .overlay_config import MAX_PREVIEW_S, OverlayConfig
 from .security import JSON_TYPE
@@ -92,8 +93,13 @@ class Routes:
         player: Player,
         session: PlaybackSession,
         overlay: OverlayConfig | None = None,
+        shortcuts: Sequence[Shortcut] = (),
+        *,
+        media_keys: bool = False,
     ) -> None:
         self._library = library
+        self._shortcuts = tuple(shortcuts)
+        self._media_keys = MEDIA_KEYS if media_keys else ()
         self._player = player
         self._session = session
         self._overlay = overlay
@@ -117,6 +123,7 @@ class Routes:
             ("POST", re.compile(rf"{API}/player/volume"), self._volume),
             ("POST", re.compile(rf"{API}/tracks/{segment}/offset"), self._offset),
             ("GET", re.compile(rf"{API}/session"), self._session_get),
+            ("GET", re.compile(rf"{API}/shortcuts"), self._shortcuts_get),
             ("POST", re.compile(rf"{API}/session/settings"), self._session_settings),
             ("POST", re.compile(rf"{API}/playlists/{segment}/shuffle"), self._shuffle),
             ("POST", re.compile(rf"{API}/playlists/{segment}/unshuffle"), self._unshuffle),
@@ -239,9 +246,16 @@ class Routes:
         return self._ok()
 
     def _volume(self, body: dict[str, Any]) -> Response:
-        volume = _number(body, "volume")
-        if not 0 <= volume <= 100:
-            raise ApiError(400, "volume must be between 0 and 100")
+        if ("volume" in body) == ("delta" in body):
+            raise ApiError(400, "give exactly one of volume and delta")
+        if "volume" in body:
+            volume = _number(body, "volume")
+            if not 0 <= volume <= 100:
+                raise ApiError(400, "volume must be between 0 and 100")
+        else:
+            # Relative, for the volume shortcuts; it stops at the ends rather than failing.
+            current = self._player.bus.current.volume
+            volume = max(0.0, min(100.0, current + _number(body, "delta")))
         self._player.set_volume(volume)
         return self._ok()
 
@@ -287,6 +301,17 @@ class Routes:
 
     def _session_get(self) -> Response:
         return Response.json(self._session.document())
+
+    def _shortcuts_get(self) -> Response:
+        """The keyboard shortcuts this daemon was configured with, and the media keys if on."""
+        return Response.json(
+            {
+                "shortcuts": [shortcut.to_dict() for shortcut in self._shortcuts],
+                "media_keys": [
+                    {"keys": keys, "description": what} for keys, what in self._media_keys
+                ],
+            }
+        )
 
     def _session_settings(self, body: dict[str, Any]) -> Response:
         """Change playback settings from ``{setting: value}``."""

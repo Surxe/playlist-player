@@ -17,6 +17,8 @@ from spotifixed.config import REPO_ROOT
 
 PACKAGE = __import__("pathlib").Path(spotifixed.__file__).parent
 GTK_MODULE = PACKAGE / "overlay" / "render" / "gtk_layer.py"
+# The shortcuts process is a program of its own, with no layer shell to load first.
+PORTAL_MODULE = PACKAGE / "shortcuts" / "portal.py"
 
 
 def _imports_gi(path) -> bool:
@@ -28,13 +30,13 @@ def _imports_gi(path) -> bool:
     return False
 
 
-def test_only_the_gtk_renderer_imports_gi():
+def test_only_the_gtk_renderer_and_the_shortcuts_portal_import_gi():
     offenders = [
         str(path.relative_to(PACKAGE))
         for path in PACKAGE.rglob("*.py")
-        if path != GTK_MODULE and _imports_gi(path)
+        if path not in (GTK_MODULE, PORTAL_MODULE) and _imports_gi(path)
     ]
-    assert not offenders and _imports_gi(GTK_MODULE)
+    assert not offenders and _imports_gi(GTK_MODULE) and _imports_gi(PORTAL_MODULE)
 
 
 def test_the_entry_module_loads_the_layer_shell_library_before_any_package_import():
@@ -64,6 +66,7 @@ def test_nothing_but_the_renderer_pulls_gi_into_the_process():
         "import spotifixed.overlay.presenter\n"
         "import spotifixed.overlay.render.base\n"
         "import spotifixed.server.app\n"
+        "import spotifixed.launch, spotifixed.shortcuts.main\n"
         "print('gi' in sys.modules)\n"
     )
     result = subprocess.run(

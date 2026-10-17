@@ -91,3 +91,33 @@ export function initSwitches({ getJson, postJson, ids, noteId, changed }) {
     },
   };
 }
+
+// The keyboard section: which keys do what, as the daemon was set up. Nothing to change
+// here; the volume keys are the desktop's to rebind, and the media keys are fixed.
+export function initKeyboardList({ getJson }) {
+  const list = document.getElementById("shortcut-list");
+
+  function show({ shortcuts, media_keys: mediaKeys }) {
+    const rows = [...shortcuts, ...mediaKeys];
+    list.replaceChildren();
+    for (const { keys, description } of rows) {
+      const term = document.createElement("dt");
+      const what = document.createElement("dd");
+      term.textContent = keys;
+      what.textContent = description;
+      list.append(term, what);
+    }
+    if (rows.length === 0) {
+      const none = document.createElement("dd");
+      none.textContent = "No keyboard keys are set up for spotifixed.";
+      list.append(none);
+    }
+  }
+
+  return {
+    async opened() {
+      const keys = await getJson("/shortcuts").catch(() => null);
+      if (keys) show(keys);
+    },
+  };
+}

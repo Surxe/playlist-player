@@ -8,7 +8,7 @@ import {
   alignedWord, currentIndex, currentWord, formatTime, lineProgress, positionAt, wordEnds, wordRanges,
 } from "./clock.js";
 import { initOverlayPanel } from "./overlay.js";
-import { initPlaybackSettings, initSettingsPane, initSwitches } from "./settings.js";
+import { initKeyboardList, initPlaybackSettings, initSettingsPane, initSwitches } from "./settings.js";
 
 const API = "/api/v1";
 // Show a line slightly before its timestamp; it reads better than exactly on it.
@@ -94,6 +94,7 @@ initSettingsPane([
     ids: { show_lyrics: "show-lyrics", show_position: "show-position" },
     changed: applyView,
   }),
+  initKeyboardList({ getJson }),
   overlayPanel,
 ]);
 

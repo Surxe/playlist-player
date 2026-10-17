@@ -7,6 +7,7 @@ import random
 
 import pytest
 
+from spotifixed import shortcut_settings
 from spotifixed.cache import assets
 from spotifixed.config import load_settings
 from spotifixed.errors import PlaybackError
@@ -291,6 +292,40 @@ def test_volume(routes, player):
     for bad in ({"volume": 101}, {"volume": -1}, {"volume": "loud"}, {}):
         assert post(routes, "/player/volume", bad)[0].status == 400
     assert len(player.calls) == 1
+
+
+def test_a_volume_delta_is_relative_and_stops_at_the_ends(routes, player):
+    post(routes, "/player/volume", {"volume": 50})
+    for delta in (5, -12, 80, -200):
+        assert post(routes, "/player/volume", {"delta": delta})[0].status == 200
+    assert [value for name, value in player.calls if name == "set_volume"] == [
+        50.0, 55.0, 43.0, 100.0, 0.0,
+    ]  # fmt: skip
+    for bad in ({"delta": "up"}, {"delta": 5, "volume": 50}):
+        assert post(routes, "/player/volume", bad)[0].status == 400
+
+
+def test_shortcuts_lists_the_configured_ones_and_the_media_keys(store, player):
+    build_library(store)
+    library = Library(store)
+    session = PlaybackSession(store, library, player)
+    shortcuts = shortcut_settings.from_settings(load_settings())
+    _response, body = get(
+        Routes(library, player, session, shortcuts=shortcuts, media_keys=True), "/shortcuts"
+    )
+    assert body["shortcuts"] == [
+        {"id": "volume-up", "description": "Raise spotifixed's volume", "keys": "Ctrl+Volume Up"},
+        {
+            "id": "volume-down",
+            "description": "Lower spotifixed's volume",
+            "keys": "Ctrl+Volume Down",
+        },
+    ]
+    assert {"keys": "Play/Pause", "description": "Play or pause"} in body["media_keys"]
+
+
+def test_shortcuts_is_empty_when_none_are_set_and_mpv_answers_no_media_keys(routes):
+    assert get(routes, "/shortcuts")[1] == {"shortcuts": [], "media_keys": []}
 
 
 def test_offset_is_persisted_to_state_and_pushed_to_the_player(routes, player, store):
