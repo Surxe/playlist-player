@@ -311,8 +311,8 @@ OPTIONS_SCHEMA = {
         "section": _OVERLAY,
         "help": (
             "Show spotifixed's volume in the overlay for a moment whenever it changes, "
-            "above the lyric line, even while paused. The fade-in on resume does not "
-            "count as a change."
+            "above the lyric line, even while paused, and the level rising during the "
+            "fade-in on resume."
         ),
     },
     # ------------------------------ Shortcuts ---------------------------- #

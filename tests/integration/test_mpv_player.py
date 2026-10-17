@@ -530,6 +530,11 @@ def test_a_fade_in_is_silent_while_paused_then_rises_and_leaves_the_volume_alone
     # The listener's volume was never touched, so nothing has to put it back.
     assert {s.volume for s in log.states if s.volume is not None} == {100.0, 40.0}
     assert log.bus.current.volume == 40
+    # The snapshot that started playback said so, for the overlay to draw the rise.
+    first_playing = next(s for s in log.states if s.status is PlayerStatus.PLAYING)
+    assert first_playing.fade_in_s == 1.0
+    assert first_playing.fade_from_s == pytest.approx(first_playing.position_s)
+    assert all(s.fade_in_s == 0 for s in log.states if s.status is PlayerStatus.PAUSED)
 
 
 def test_every_resume_fades_in_from_silence_and_a_pause_mid_fade_starts_over(make_player, tones):

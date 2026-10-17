@@ -18,10 +18,16 @@ named.
 
 The volume indicator rides on top of whatever the line logic decided. For
 :data:`VOLUME_SHOWN_MS` after the volume changes, the view is visible and carries the
-volume, paused or not, with or without a line. Only the listener's ``volume`` counts:
-the fade-in on resume works on a separate gain inside mpv that never reaches the state,
-so it does not show. The first state after connecting sets the baseline and shows
-nothing, so a restart does not flash it.
+volume, paused or not, with or without a line. The first state after connecting sets
+the baseline and shows nothing, so a restart does not flash it.
+
+The fade-in on resume shows too, as the level rising to the volume and then held for
+:data:`VOLUME_SHOWN_MS`. The daemon publishes no level while it fades; the snapshot that
+starts playback says where the fade began and how long it is, and the level is worked
+out here from the playback position on the overlay's own timer. mpv's volume is cubic
+(the gain is the volume over 100, cubed) while the fade raises the gain evenly, so the
+level shown, on the volume slider's scale, is the volume times the cube root of the
+fade's progress.
 
 In every other case the view is hidden, and the renderer unmaps the surface rather than
 drawing something transparent, so the compositor can go back to presenting the
@@ -98,13 +104,15 @@ def present(
     preview_until_ms: int = 0,
     ends: Sequence[Sequence[float]] | None = None,
     volume_until_ms: int = 0,
+    show_fade: bool = False,
 ) -> OverlayView:
     """The view for this instant. ``times`` are the timestamps of ``lines``.
 
     ``ends`` are the lines' word endings (:func:`~spotifixed.lyrics.word_ends`);
     given, the word being sung is underlined, and left out, no word is. A line that
     carries aligned word times uses those; any other line uses the estimate in ``ends``.
-    Until ``volume_until_ms`` the state's volume is shown as well.
+    Until ``volume_until_ms`` the state's volume is shown as well, and with
+    ``show_fade`` so is the level of a fade-in under way.
     """
     if not connected:
         return HIDDEN
@@ -119,10 +127,30 @@ def present(
         preview_until_ms=preview_until_ms,
         ends=ends,
     )
-    if state is None or now_ms >= volume_until_ms:
+    if state is None:
         return view
-    # ticking: the indicator ends on time
-    return replace(view, visible=True, ticking=True, volume=round(state.volume))
+    level = fade_level(state, now_ms) if show_fade else None
+    if level is None and now_ms < volume_until_ms:
+        level = state.volume
+    if level is None:
+        return view
+    # ticking: the level rises, and the indicator ends, on time
+    return replace(view, visible=True, ticking=True, volume=round(level))
+
+
+def fade_level(state: PlaybackState, now_ms: int) -> float | None:
+    """The level a fade-in has reached, on the volume's scale; None when none is shown.
+
+    Shown while the fade rises and for :data:`VOLUME_SHOWN_MS` after it ends, counted
+    in playback time, which is what the fade itself counts.
+    """
+    if state.fade_in_s <= 0 or state.status is not PlayerStatus.PLAYING or state.paused:
+        return None
+    played = state.position_at(now_ms) - state.fade_from_s
+    if played < 0 or played >= state.fade_in_s + VOLUME_SHOWN_MS / 1000:
+        return None
+    share = min(1.0, played / state.fade_in_s)
+    return state.volume * share ** (1 / 3)
 
 
 def _line_view(
@@ -272,4 +300,5 @@ class OverlayModel:
                 preview_until_ms=self._preview_until_ms,
                 ends=self._ends if self._underline_word else None,
                 volume_until_ms=self._volume_until_ms,
+                show_fade=self._volume_indicator,
             )

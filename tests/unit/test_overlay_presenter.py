@@ -15,6 +15,7 @@ from spotifixed.overlay.presenter import (
     VOLUME_SHOWN_MS,
     OverlayModel,
     OverlayView,
+    fade_level,
     present,
     sample_view,
 )
@@ -444,3 +445,45 @@ def test_the_volume_shown_is_rounded_to_a_whole_number():
     model = indicator_model()
     model.set_state(playing(10.5, volume=64.6), now_ms=T0)
     assert model.view(T0).volume == 65
+
+
+# ------------------------------- fade-in level ------------------------------- #
+
+
+def fading(position_s: float, **state) -> PlaybackState:
+    """Playing at ``position_s``, in a 2 s fade-in that began at 10 s, at volume 64."""
+    return playing(position_s, volume=64.0, fade_from_s=10.0, fade_in_s=2.0, **state)
+
+
+def test_a_fade_in_shows_its_level_rising_to_the_volume_on_the_sliders_scale():
+    # Gain rises evenly; mpv's volume is cubic, so the level is volume * cbrt(progress).
+    assert fade_level(fading(10.0), T0) == 0
+    assert fade_level(fading(10.25), T0) == pytest.approx(32.0)  # 1/8 of the way: half
+    assert fade_level(fading(11.0), T0) == pytest.approx(64.0 * 0.5 ** (1 / 3))
+    assert fade_level(fading(12.0), T0) == 64.0
+
+
+def test_the_level_follows_playback_time_on_the_overlays_own_clock():
+    state = fading(10.25)
+    assert fade_level(state, T0 + 750) == pytest.approx(64.0 * 0.5 ** (1 / 3))
+
+
+def test_after_the_fade_the_volume_is_held_for_a_while_then_goes():
+    end = 12.0
+    assert fade_level(fading(end + VOLUME_SHOWN_MS / 1000 - 0.01), T0) == 64.0
+    assert fade_level(fading(end + VOLUME_SHOWN_MS / 1000), T0) is None
+
+
+def test_no_level_without_a_fade_or_while_paused():
+    assert fade_level(playing(10.5), T0) is None
+    assert fade_level(fading(10.5, status=PlayerStatus.PAUSED, paused=True), T0) is None
+
+
+def test_the_fade_shows_in_the_view_only_with_the_indicator_on():
+    lit = view(fading(10.25), show_fade=True)
+    assert (lit.visible, lit.volume, lit.ticking) == (True, 32, True)
+    assert view(fading(10.25)).volume is None
+    model = OverlayModel(volume_indicator=True)
+    model.set_connected(True)
+    model.set_state(fading(10.25), now_ms=T0)  # the first state: a fade is no baseline
+    assert model.view(T0).volume == 32
