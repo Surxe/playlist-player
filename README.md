@@ -2,7 +2,7 @@
   <img src="docs/media/overlay-demo.gif" alt="A lyric line drawn over a fullscreen game, with the word being sung underlined" width="720">
 </p>
 
-# spotifixed
+# <img src="spotifixed/server/static/icon.svg" alt="" width="40" align="top"> spotifixed
 
 **Lyrics on top of anything.** spotifixed plays your Spotify playlists and draws the line
 being sung right over your game, video or whatever else is fullscreen. It stays out of the
