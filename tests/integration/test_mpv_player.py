@@ -654,3 +654,24 @@ def test_mono_puts_one_sided_sound_in_both_ears(runtime):
     left, right = samples[0::2], samples[1::2]
     assert max(abs(sample) for sample in left) > 1000  # there is sound, not silence
     assert left.tolist() == right.tolist()
+
+
+def test_a_resume_part_way_through_marks_its_fade_where_it_resumed(make_player, tones):
+    """What the overlay draws the rising level from, on a resume in the middle of a song."""
+    from spotifixed.overlay.presenter import fade_level
+
+    player, log = make_player()
+    player.set_volume(64)
+    player.set_fade_in(2.0)
+    player.load_queue(queue_of(tones, [30]))
+    log.wait_for(playing("T0"))
+    time.sleep(1.5)
+    player.pause()
+    paused = log.wait_for(lambda s: s.status is PlayerStatus.PAUSED)
+    time.sleep(0.3)
+    player.play()
+    resumed = log.wait_for(playing("T0"), after=paused.version)
+    assert resumed.fade_in_s == 2.0
+    assert resumed.fade_from_s == pytest.approx(paused.position_s, abs=0.3)
+    level = fade_level(resumed, resumed.captured_at_epoch_ms + 500)
+    assert level is not None and 0 < level < 64, level
