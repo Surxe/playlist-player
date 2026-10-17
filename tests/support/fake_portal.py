@@ -10,8 +10,9 @@ session. Each shortcut is described back with its preferred trigger as its trigg
 description, except one whose description says "taken", which is left with no key. Once
 a session has its shortcuts, by binding them or by listing ones already bound, it
 presses every one once, in order, then a shortcut it never bound and one in another
-session, which a client must ignore. Every call it receives is printed as one JSON line,
-then ``ready`` once it owns its name.
+session, which a client must ignore. A press is an Activated then a Deactivated as the
+key is let go, both sent to the session's owner as the real portal does. Every call it
+receives is printed as one JSON line, then ``ready`` once it owns its name.
 """
 
 from __future__ import annotations
@@ -46,6 +47,12 @@ XML = f"""
       <arg type="o" name="handle" direction="out"/>
     </method>
     <signal name="Activated">
+      <arg type="o" name="session_handle"/>
+      <arg type="s" name="shortcut_id"/>
+      <arg type="t" name="timestamp"/>
+      <arg type="a{{sv}}" name="options"/>
+    </signal>
+    <signal name="Deactivated">
       <arg type="o" name="session_handle"/>
       <arg type="s" name="shortcut_id"/>
       <arg type="t" name="timestamp"/>
@@ -96,9 +103,11 @@ def main() -> None:
         presses += [(session, "never-bound"), (f"{OBJECT_PATH}/session/other/x", bound[0][0])]
         for when, (to_session, sid) in enumerate(presses, start=1):
             values = (to_session, sid, when, {})
-            GLib.timeout_add(
-                100 * when, emit, None, OBJECT_PATH, INTERFACE, "Activated", "(osta{sv})", values
-            )
+            for name, delay_ms in (("Activated", 0), ("Deactivated", 50)):
+                GLib.timeout_add(
+                    100 * when + delay_ms, emit, sender, OBJECT_PATH, INTERFACE, name,
+                    "(osta{sv})", values,
+                )  # fmt: skip
 
     info = Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0]
     connection.register_object(OBJECT_PATH, info, call, None, None)
