@@ -167,6 +167,9 @@ ol { list-style: none; margin: 0; padding: 0; }
 #settings-pane section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 #settings-close { margin-left: auto; }
 #settings-pane p { margin: 8px 0; font-size: 12px; }
+.keys { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; margin: 8px 0; font-size: 12px; }
+.keys dt { font-family: ui-monospace, monospace; }
+.keys dd { margin: 0; }
 .pane-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .pane-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 button:disabled { opacity: 0.45; cursor: default; }

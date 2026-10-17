@@ -22,6 +22,7 @@ _TRACKLIST = "Tracklist (Apify)"
 _SYNC = "Sync"
 _DAEMON = "Daemon"
 _OVERLAY = "Overlay"
+_SHORTCUTS = "Shortcuts"
 
 Anchor = Literal[
     "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right",
@@ -301,5 +302,40 @@ OPTIONS_SCHEMA = {
             "Underline the word being sung, in the overlay and on the page. The word is "
             "estimated from the line timing, so it needs the track's offset to be right."
         ),
+    },
+    # ------------------------------ Shortcuts ---------------------------- #
+    "SHORTCUT_VOLUME_UP": {
+        "env": "SPOTIFIXED_SHORTCUT_VOLUME_UP",
+        "arg": "--shortcut-volume-up",
+        "type": str,
+        "default": "CTRL+XF86AudioRaiseVolume",
+        "section": _SHORTCUTS,
+        "help": (
+            "Global shortcut that raises spotifixed's own volume, in the XDG shortcuts "
+            "format (modifiers CTRL, ALT, SHIFT, NUM, LOGO joined by + to an xkb key name, "
+            "e.g. CTRL+XF86AudioRaiseVolume or LOGO+Up). It is the trigger suggested to the "
+            "desktop's global shortcuts portal, which may let the user change it. Empty "
+            "disables it. Play, pause, next and previous are the keyboard's media keys "
+            "(SPOTIFIXED_MPV_MPRIS_PLUGIN), not settings here."
+        ),
+    },
+    "SHORTCUT_VOLUME_DOWN": {
+        "env": "SPOTIFIXED_SHORTCUT_VOLUME_DOWN",
+        "arg": "--shortcut-volume-down",
+        "type": str,
+        "default": "CTRL+XF86AudioLowerVolume",
+        "section": _SHORTCUTS,
+        "help": (
+            "Global shortcut that lowers spotifixed's own volume, in the same format as "
+            "SPOTIFIXED_SHORTCUT_VOLUME_UP. Empty disables it."
+        ),
+    },
+    "SHORTCUT_VOLUME_STEP": {
+        "env": "SPOTIFIXED_SHORTCUT_VOLUME_STEP",
+        "arg": "--shortcut-volume-step",
+        "type": int,
+        "default": 5,
+        "section": _SHORTCUTS,
+        "help": "How much one press of a volume shortcut changes the volume, out of 100.",
     },
 }

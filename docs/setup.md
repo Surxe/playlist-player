@@ -15,11 +15,12 @@ front page is the [README](../README.md).
 | `serve` | The daemon: owns mpv, publishes playback state, serves the remote-control page | mpv |
 | `ctl` | Sends play, pause, next and so on to the daemon, for a keyboard shortcut | a running `serve` |
 | `overlay` | Draws the current lyric line above other windows; hidden while paused | a running `serve`, GTK 4 layer-shell |
-| `start` | The whole application at once: `serve`, `overlay` beside it, and the page opened in the browser | what those need |
+| `shortcuts` | Holds the global volume shortcuts and sends each press to the daemon | a running `serve`, python3-gi, a desktop with the global shortcuts portal |
+| `start` | The whole application at once: `serve`, `overlay` and `shortcuts` beside it, and the page opened in the browser | what those need |
 
 `sync` is the only command that touches the network. `serve`, the page and the overlay
-work from the cache: the page and the overlay are plain clients of the daemon's HTTP API
-on 127.0.0.1, and neither reads the cache nor talks to mpv.
+work from the cache: the page, the overlay and the shortcuts are plain clients of the
+daemon's HTTP API on 127.0.0.1, and none of them reads the cache or talks to mpv.
 
 ## Installing
 
@@ -29,6 +30,7 @@ Programs (Debian and Ubuntu names; other distributions have the same packages):
 sudo apt-get install python3-venv ffmpeg mpv                       # required
 sudo apt-get install mpv-mpris                                     # optional: media keys
 sudo apt-get install libgtk4-layer-shell0 gir1.2-gtk4layershell-1.0 python3-gi  # optional: overlay
+sudo apt-get install python3-gi                                    # optional: volume shortcuts
 ```
 
 Then, in a clone of this repo:
@@ -306,6 +308,21 @@ deliberately not registered, so a token cannot end up on a command line.
 * **SPOTIFIXED_OVERLAY_UNDERLINE_WORD** - Underline the word being sung, in the overlay and on the page. The word is estimated from the line timing, so it needs the track's offset to be right.
   - Default: `"false"`
   - Command line: `--overlay-underline-word`
+
+
+#### Shortcuts
+
+* **SPOTIFIXED_SHORTCUT_VOLUME_UP** - Global shortcut that raises spotifixed's own volume, in the XDG shortcuts format (modifiers CTRL, ALT, SHIFT, NUM, LOGO joined by + to an xkb key name, e.g. CTRL+XF86AudioRaiseVolume or LOGO+Up). It is the trigger suggested to the desktop's global shortcuts portal, which may let the user change it. Empty disables it. Play, pause, next and previous are the keyboard's media keys (SPOTIFIXED_MPV_MPRIS_PLUGIN), not settings here.
+  - Default: `"CTRL+XF86AudioRaiseVolume"`
+  - Command line: `--shortcut-volume-up`
+
+* **SPOTIFIXED_SHORTCUT_VOLUME_DOWN** - Global shortcut that lowers spotifixed's own volume, in the same format as SPOTIFIXED_SHORTCUT_VOLUME_UP. Empty disables it.
+  - Default: `"CTRL+XF86AudioLowerVolume"`
+  - Command line: `--shortcut-volume-down`
+
+* **SPOTIFIXED_SHORTCUT_VOLUME_STEP** - How much one press of a volume shortcut changes the volume, out of 100.
+  - Default: `"5"`
+  - Command line: `--shortcut-volume-step`
 
 
 <!-- END_GENERATED_OPTIONS -->

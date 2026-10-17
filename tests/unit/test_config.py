@@ -151,7 +151,7 @@ def test_flags_are_generated_from_the_schema(capsys):
 
 
 def test_the_package_needs_nothing_outside_the_standard_library_to_load_settings():
-    """serve, ctl and overlay must run on a bare interpreter."""
+    """serve, ctl, overlay and shortcuts must run on a bare interpreter."""
     import subprocess
     import sys
 
@@ -161,7 +161,7 @@ def test_the_package_needs_nothing_outside_the_standard_library_to_load_settings
         "sys.modules['optionsconfig'] = None; sys.modules['dotenv'] = None\n"
         "sys.modules['loguru'] = None; sys.modules['yt_dlp'] = None\n"
         "import spotifixed.cli, spotifixed.server.app, spotifixed.server.ctl\n"
-        "import spotifixed.overlay.main\n"
+        "import spotifixed.overlay.main, spotifixed.shortcuts.main\n"
         "from spotifixed.config import load_settings\n"
         "print(load_settings().port)\n"
     )

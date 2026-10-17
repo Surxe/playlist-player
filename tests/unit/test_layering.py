@@ -2,8 +2,8 @@
 
 The layers, lowest first. A module may import from its own top-level unit or from a
 strictly lower layer, never sideways into another unit on the same layer and never
-upward. The overlay additionally must stay a pure API client: it may not reach into the
-cache, the sources or the playback engine even though those sit below it.
+upward. The overlay and the shortcuts additionally must stay pure API clients: they may
+not reach into the cache, the sources or the playback engine even though those sit below.
 """
 
 from __future__ import annotations
@@ -18,12 +18,13 @@ PACKAGE = Path(spotifixed.__file__).parent
 LAYERS: dict[str, int] = {
     "models": 0, "errors": 0, "options_schema": 0,
     "http": 1, "config": 1, "cache": 1, "lyrics": 1,
-    "sources": 2, "playback": 2, "overlay_settings": 2,
-    "sync": 3, "server": 3, "overlay": 3, "align": 3,
+    "sources": 2, "playback": 2, "overlay_settings": 2, "shortcut_settings": 2,
+    "sync": 3, "server": 3, "overlay": 3, "shortcuts": 3, "align": 3,
     "launch": 4,
     "cli": 5, "__main__": 6,
 }  # fmt: skip
 
+API_CLIENTS = ("overlay", "shortcuts")
 OVERLAY_FORBIDDEN = {"cache", "sources", "playback", "sync", "server"}
 
 
@@ -82,11 +83,11 @@ def test_imports_only_point_downward():
     assert not violations, "\n".join(violations)
 
 
-def test_overlay_is_a_pure_api_client():
+def test_the_overlay_and_the_shortcuts_are_pure_api_clients():
     violations = [
         f"{path.relative_to(PACKAGE)} imports {target}"
         for path in _modules()
-        if _unit(path) == "overlay"
+        if _unit(path) in API_CLIENTS
         for target in _imported_units(path) & OVERLAY_FORBIDDEN
     ]
     assert not violations, "\n".join(violations)

@@ -24,6 +24,7 @@ from ..overlay_settings import OverlaySettings
 from ..playback.base import Player
 from ..playback.mpv import MpvPlayer
 from ..playback.state import StateBus
+from ..shortcut_settings import from_settings as shortcuts_from
 from . import sse
 from .library import Library
 from .overlay_config import OverlayConfig
@@ -60,7 +61,14 @@ class Daemon:
         self.overlay = OverlayConfig(OverlaySettings.from_settings(settings), store)
         library = Library(store)
         self.session = PlaybackSession(store, library, player)
-        self.routes = Routes(library, player, self.session, self.overlay)
+        self.routes = Routes(
+            library,
+            player,
+            self.session,
+            self.overlay,
+            shortcuts=shortcuts_from(settings),
+            media_keys=bool(settings.mpv_mpris_plugin),
+        )
         self.keepalive_s = keepalive_s
         self.stopping = threading.Event()
         self._streams = 0
@@ -185,7 +193,9 @@ def run(settings: Settings, *, on_ready: Callable[[Daemon], None] | None = None)
     ``on_ready`` is called once the daemon is listening, just before it starts serving.
     """
     store = CacheStore(settings.cache_dir, settings.state_dir)
-    OverlaySettings.from_settings(settings)  # a bad overlay setting fails before mpv starts
+    # A bad overlay or shortcut setting fails before mpv starts.
+    OverlaySettings.from_settings(settings)
+    shortcuts_from(settings)
     player = MpvPlayer(
         StateBus(),
         socket_path=runtime_dir() / f"mpv-{settings.port}.sock",

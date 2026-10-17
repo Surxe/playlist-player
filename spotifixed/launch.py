@@ -7,6 +7,11 @@ listening and stopped when the daemon stops, which makes one terminal hold the w
 application: Ctrl-C there, or closing it, ends all of it. In between it follows the
 overlay switch on the page: switched off, the overlay process is stopped altogether, and
 switched on, it is started again.
+
+The keyboard shortcuts are a second child, for the same reason (a GLib main loop of
+their own). They have no switch: they run for as long as the daemon does, whenever a
+shortcut is set. When the desktop cannot hold them, that child says why and ends, and
+the rest carries on.
 """
 
 from __future__ import annotations
@@ -24,14 +29,28 @@ from .config import Settings
 from .server.app import Daemon
 from .server.app import run as serve
 from .server.overlay_config import OverlayConfig
+from .shortcut_settings import from_settings as shortcuts_from
 
 # How long a stopping overlay gets before it is killed.
 _STOP_TIMEOUT_S = 3.0
 
 
+def child_command(command: str, settings_argv: Sequence[str]) -> list[str]:
+    """``command`` as a command line, on this interpreter and with these settings flags."""
+    return [sys.executable, "-m", "spotifixed", command, *settings_argv]
+
+
 def overlay_command(settings_argv: Sequence[str]) -> list[str]:
     """The overlay as a command line, on this interpreter and with these settings flags."""
-    return [sys.executable, "-m", "spotifixed", "overlay", *settings_argv]
+    return child_command("overlay", settings_argv)
+
+
+def child_environment() -> dict[str, str]:
+    """The environment for a child: this one, with no more to import than this process."""
+    env = dict(os.environ)
+    if sys.flags.no_user_site:
+        env["PYTHONNOUSERSITE"] = "1"
+    return env
 
 
 class Overlay:
@@ -80,10 +99,7 @@ class Overlay:
                 self._end()
 
     def _start(self) -> None:
-        env = dict(os.environ)
-        if sys.flags.no_user_site:  # the child gets no more to import than this process
-            env["PYTHONNOUSERSITE"] = "1"
-        process = subprocess.Popen(self._command, env=env)
+        process = subprocess.Popen(self._command, env=child_environment())
         self._process = process
         threading.Thread(target=self._watch, args=(process,), daemon=True).start()
 
@@ -129,6 +145,32 @@ class Overlay:
             self._end()
 
 
+class Shortcuts:
+    """The keyboard shortcuts as a child process, for as long as the daemon runs.
+
+    Started once. If it ends early (the desktop has no shortcuts portal, say), it has
+    already printed why, and it is not started again.
+    """
+
+    def __init__(self, command: Sequence[str]) -> None:
+        self._command = list(command)
+        self._process: subprocess.Popen[bytes] | None = None
+
+    def start(self) -> None:
+        self._process = subprocess.Popen(self._command, env=child_environment())
+
+    def stop(self) -> None:
+        process, self._process = self._process, None
+        if process is None or process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=_STOP_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+
 def is_listening(settings: Settings) -> bool:
     """Whether something already answers on the daemon's address."""
     try:
@@ -143,12 +185,14 @@ def run(
     *,
     settings_argv: Sequence[str] = (),
     overlay: bool = True,
+    shortcuts: bool = True,
     open_page: bool = True,
     open_url: Callable[[str], object] = webbrowser.open,
 ) -> int:
     """Run the daemon with the overlay beside it until stopped; open the page once it is up.
 
     With ``overlay`` false the overlay is neither started nor switchable from the page.
+    With ``shortcuts`` false, or no shortcut set, the shortcuts child is not started.
     """
     if open_page and is_listening(settings):
         # Started a second time, e.g. from a launcher: show what is already running.
@@ -156,13 +200,17 @@ def run(
         open_url(f"{settings.base_url}/")
         return 0
 
-    children: list[Overlay] = []
+    children: list[Overlay | Shortcuts] = []
 
     def ready(daemon: Daemon) -> None:
         if overlay:
             child = Overlay(overlay_command(settings_argv), daemon.overlay, daemon.stopping)
             children.append(child)
             child.follow()
+        if shortcuts and shortcuts_from(settings):
+            keys = Shortcuts(child_command("shortcuts", settings_argv))
+            children.append(keys)
+            keys.start()
         if open_page:
             open_url(f"{daemon.url}/")
         print("Ctrl-C, or closing this terminal, stops spotifixed.", flush=True)

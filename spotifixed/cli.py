@@ -12,7 +12,8 @@ Commands:
 * ``serve``    run the daemon: mpv, the HTTP API and the remote-control page
 * ``ctl``      send a transport command to a running daemon
 * ``overlay``  show the current lyric line above other windows
-* ``start``    the whole application at once: ``serve``, ``overlay`` and the page
+* ``shortcuts`` hold the global volume shortcuts and send their presses to the daemon
+* ``start``    the whole application at once: ``serve``, ``overlay``, ``shortcuts`` and the page
 """
 
 from __future__ import annotations
@@ -225,6 +226,12 @@ def _cmd_overlay(args: argparse.Namespace, settings: Settings) -> int:
     return run(settings, demo=args.demo, snapshot=args.snapshot)
 
 
+def _cmd_shortcuts(args: argparse.Namespace, settings: Settings) -> int:
+    from .shortcuts.main import run
+
+    return run(settings)
+
+
 def _cmd_start(args: argparse.Namespace, settings: Settings) -> int:
     from .launch import run
 
@@ -232,6 +239,7 @@ def _cmd_start(args: argparse.Namespace, settings: Settings) -> int:
         settings,
         settings_argv=settings_arguments(args),
         overlay=not args.no_overlay,
+        shortcuts=not args.no_shortcuts,
         open_page=not args.no_browser,
     )
 
@@ -297,7 +305,9 @@ def build_parser() -> argparse.ArgumentParser:
     ctl.add_argument(
         "verb", choices=("toggle", "play", "pause", "next", "prev", "stop", "seek", "volume")
     )
-    ctl.add_argument("value", nargs="?", help="seconds for seek (+10, -5, 90), 0-100 for volume")
+    ctl.add_argument(
+        "value", nargs="?", help="seek: seconds (+10, -5, 90); volume: 0-100, or +5/-5 to change it"
+    )
 
     overlay = add("overlay", "Show the current lyric line above other windows.", _cmd_overlay)
     overlay.add_argument(
@@ -305,8 +315,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     overlay.add_argument("--snapshot", metavar="FILE", help="render one frame to a PNG and exit")
 
-    start = add("start", "Run the daemon and the overlay together, and open the page.", _cmd_start)
+    add(
+        "shortcuts",
+        "Hold the global volume shortcuts for a running daemon (through the desktop portal).",
+        _cmd_shortcuts,
+    )
+
+    summary = "Run the daemon, the overlay and the shortcuts together, and open the page."
+    start = add("start", summary, _cmd_start)
     start.add_argument("--no-overlay", action="store_true", help="do not start the overlay")
+    start.add_argument(
+        "--no-shortcuts", action="store_true", help="do not register the volume shortcuts"
+    )
     start.add_argument("--no-browser", action="store_true", help="do not open the page")
 
     return parser
