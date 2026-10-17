@@ -303,6 +303,18 @@ OPTIONS_SCHEMA = {
             "estimated from the line timing, so it needs the track's offset to be right."
         ),
     },
+    "OVERLAY_VOLUME_INDICATOR": {
+        "env": "SPOTIFIXED_OVERLAY_VOLUME_INDICATOR",
+        "arg": "--overlay-volume-indicator",
+        "type": bool,
+        "default": True,
+        "section": _OVERLAY,
+        "help": (
+            "Show spotifixed's volume in the overlay for a moment whenever it changes, "
+            "above the lyric line, even while paused. The fade-in on resume does not "
+            "count as a change."
+        ),
+    },
     # ------------------------------ Shortcuts ---------------------------- #
     "SHORTCUT_VOLUME_UP": {
         "env": "SPOTIFIXED_SHORTCUT_VOLUME_UP",

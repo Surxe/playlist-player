@@ -12,6 +12,7 @@ from spotifixed.overlay.presenter import (
     HIDDEN,
     SAMPLE_NEXT,
     SAMPLE_TEXT,
+    VOLUME_SHOWN_MS,
     OverlayModel,
     OverlayView,
     present,
@@ -370,3 +371,76 @@ def test_a_line_aligned_to_the_audio_uses_its_own_word_times():
     assert shown(11.8) == "two"
     assert shown(10.3, offset_ms=-200) == "one"  # still on the audio's clock
     assert shown(12.1) == "three"  # the next line was not aligned: the estimate again
+
+
+# ----------------------------- volume indicator ----------------------------- #
+
+
+def indicator_model(**state) -> OverlayModel:
+    """A connected model that has seen its first state (the baseline) at T0."""
+    model = OverlayModel(volume_indicator=True)
+    model.set_connected(True)
+    model.set_state(playing(10.5, volume=60.0, **state), now_ms=T0)
+    model.set_lyrics("T1", LINES)
+    return model
+
+
+def test_the_first_state_after_connecting_shows_no_volume():
+    assert indicator_model().view(T0).volume is None
+
+
+def test_a_volume_change_shows_it_above_the_line_for_a_while():
+    model = indicator_model()
+    model.set_state(playing(10.5, volume=65.0), now_ms=T0)
+    shown = model.view(T0 + 100)
+    assert (shown.visible, shown.text, shown.volume) == (True, "an invented first line", 65)
+    assert shown.ticking  # it has to come down on time
+    assert model.view(T0 + VOLUME_SHOWN_MS).volume is None
+    assert model.view(T0 + VOLUME_SHOWN_MS).text  # the line stays
+
+
+def test_while_paused_the_volume_alone_is_shown_then_the_overlay_goes_away():
+    model = indicator_model(status=PlayerStatus.PAUSED, paused=True)
+    model.set_state(playing(10.5, volume=55.0, status=PlayerStatus.PAUSED, paused=True), now_ms=T0)
+    shown = model.view(T0 + 100)
+    assert (shown.visible, shown.text, shown.volume) == (True, "", 55)
+    assert model.view(T0 + VOLUME_SHOWN_MS) == HIDDEN
+
+
+def test_held_presses_keep_it_up_from_the_last_change():
+    model = indicator_model()
+    for step, volume in enumerate((65.0, 70.0, 75.0)):
+        model.set_state(playing(10.5, volume=volume), now_ms=T0 + 500 * step)
+    last = T0 + 1000
+    assert model.view(last + VOLUME_SHOWN_MS - 1).volume == 75
+    assert model.view(last + VOLUME_SHOWN_MS).volume is None
+
+
+def test_anything_but_the_volume_changing_shows_nothing():
+    """The fade-in on resume works below the published volume, so it cannot show either."""
+    model = indicator_model()
+    for state in (playing(20.5, volume=60.0), playing(0.0, volume=60.0, track_id="T2")):
+        model.set_state(state, now_ms=T0)
+        assert model.view(T0 + 10).volume is None
+
+
+def test_switched_off_or_reconnected_there_is_no_indicator():
+    model = indicator_model()
+    model.set_state(playing(10.5, volume=65.0), now_ms=T0)
+    model.configure(lead_ms=0, show_next=False, volume_indicator=False)
+    assert model.view(T0 + 10).volume is None
+    model.set_state(playing(10.5, volume=70.0), now_ms=T0)
+    assert model.view(T0 + 10).volume is None
+
+    model = indicator_model()
+    model.set_state(playing(10.5, volume=65.0), now_ms=T0)
+    model.set_connected(False)
+    model.set_connected(True)
+    model.set_state(playing(10.5, volume=90.0), now_ms=T0)  # a new baseline, not a change
+    assert model.view(T0 + 10).volume is None
+
+
+def test_the_volume_shown_is_rounded_to_a_whole_number():
+    model = indicator_model()
+    model.set_state(playing(10.5, volume=64.6), now_ms=T0)
+    assert model.view(T0).volume == 65

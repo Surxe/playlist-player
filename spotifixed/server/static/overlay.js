@@ -25,6 +25,7 @@ export const FIELDS = [
   { key: "lead_ms", label: "Lead", unit: "ms", slider: [-500, 1000] },
   { key: "fade_ms", label: "Fade", unit: "ms", slider: [0, 1000] },
   { key: "underline_word", label: "Underline word", unit: "estimated" },
+  { key: "volume_indicator", label: "Show volume changes" },
 ];
 
 const SEND_EVERY_MS = 60;

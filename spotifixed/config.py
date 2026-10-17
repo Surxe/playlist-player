@@ -72,6 +72,7 @@ class Settings:
     overlay_lead_ms: int
     overlay_fade_ms: int
     overlay_underline_word: bool
+    overlay_volume_indicator: bool
     shortcut_volume_up: str
     shortcut_volume_down: str
     shortcut_volume_step: int

@@ -38,6 +38,7 @@ def test_every_overlay_option_in_the_schema_is_adjustable_and_named(defaults):
     assert env_name("margin_y") == "SPOTIFIXED_OVERLAY_MARGIN_Y"
     assert defaults.margin_y == 120 and defaults.anchor == "bottom" and defaults.font == "Sans Bold"
     assert defaults.underline_word is False  # an estimate: on only when asked for
+    assert defaults.volume_indicator is True
 
 
 @pytest.mark.parametrize(
@@ -47,7 +48,7 @@ def test_every_overlay_option_in_the_schema_is_adjustable_and_named(defaults):
         ("monitor", "HDMI-A-1"), ("font_size", 48), ("max_width", 800), ("font", "Serif Italic"),
         ("font", "DejaVu Sans, Bold 1.5"), ("color", "#fe0"), ("outline_color", "#11223344"),
         ("color", "white"), ("lines", 2), ("lead_ms", -200), ("fade_ms", 0),
-        ("underline_word", True), ("underline_word", False),
+        ("underline_word", True), ("underline_word", False), ("volume_indicator", False),
     ],
 )  # fmt: skip
 def test_values_a_setting_may_take(key, value):
