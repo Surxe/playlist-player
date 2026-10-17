@@ -7,10 +7,10 @@ license = "MIT"
 
 [tool.optionsconfig]
 # The settings schema lives in the package; build.py reads these paths to regenerate
-# .env.example and the README's Configuration section from it.
+# .env.example and the Configuration section of docs/setup.md from it.
 schema_module = "spotifixed.options_schema"
 env_example_path = ".env.example"
-readme_path = "README.md"
+readme_path = "docs/setup.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

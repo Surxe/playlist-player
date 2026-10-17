@@ -13,7 +13,7 @@ Each setting is taken from the first of these that has it:
 
 Resolution uses only the standard library, so every command runs on a bare Python. The
 schema is in OptionsConfig's format, and OptionsConfig is what generates ``.env.example``
-and the README's Configuration section from it (``build.py``); it is a development
+and the Configuration section of ``docs/setup.md`` from it (``build.py``); it is a development
 dependency and is not imported here.
 
 Options marked ``sensitive`` are never registered as command-line flags. A secret given

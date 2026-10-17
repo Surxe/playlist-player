@@ -3,7 +3,8 @@
 ``config.py`` resolves each option from (in priority order) a CLI argument, an
 environment variable, a ``.env`` entry in the working directory, then the ``default``
 below. The format is OptionsConfig's, so the same schema generates ``.env.example`` and
-the README's Configuration section (run ``python build.py`` after editing this file).
+the Configuration section of ``docs/setup.md`` (run ``python build.py`` after editing
+this file).
 
 Two things are deliberately NOT here:
 

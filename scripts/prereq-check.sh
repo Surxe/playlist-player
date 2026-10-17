@@ -62,7 +62,7 @@ javascript_runtime() {
     command -v node >/dev/null && echo "node $(node --version)"
 }
 
-check required "python virtualenv" "everything (see the README's Setup)" venv_python
+check required "python virtualenv" "everything (see docs/setup.md)" venv_python
 check required "ffmpeg" "sync: tagging downloaded audio" first_line ffmpeg -version
 check required "ffprobe" "sync: measuring downloaded audio" first_line ffprobe -version
 check required "yt-dlp (virtualenv)" "sync: downloading audio" ytdlp

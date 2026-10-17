@@ -5,8 +5,8 @@ Run from the repo root after editing ``spotifixed/options_schema.py``::
     .venv/bin/python build.py
 
 Reads ``[tool.optionsconfig]`` in ``pyproject.toml`` for the schema module and output
-paths, then rewrites ``.env.example`` and the README's Configuration section (between the
-BEGIN/END_GENERATED_OPTIONS markers).
+paths, then rewrites ``.env.example`` and the Configuration section of ``docs/setup.md``
+(between the BEGIN/END_GENERATED_OPTIONS markers).
 """
 
 from __future__ import annotations
